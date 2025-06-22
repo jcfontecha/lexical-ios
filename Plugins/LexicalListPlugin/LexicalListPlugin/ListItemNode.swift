@@ -250,7 +250,10 @@ public class ListItemNode: ElementNode {
     let listNode = node.getParent() as? ListNode
 
     var attributes: [NSAttributedString.Key: Any] = theme.listItem ?? [:]
-    attributes[.paddingHead] = attributes[.paddingHead] ?? theme.indentSize
+    // Text padding needs to account for base margin plus any indentation
+    let indentLevel = CGFloat(getIndent())
+    let textPadding = theme.listBulletMargin + theme.listBulletTextSpacing + (indentLevel * theme.indentSize)
+    attributes[.paddingHead] = textPadding
 
     if node.getChildren().first is ListNode {
       // Don't apply styles for this list item, because there's another list inside it (don't want to draw two bullets!)
@@ -288,11 +291,11 @@ public class ListItemNode: ElementNode {
       }
     }
 
-    // the magic number is to horizontally position the bullet further left than the indent size, but not so far as to hit the previous indent stop.
+    // Position bullets with proper left margin plus indentation
     attributes[.listItem] = ListItemAttribute(
       itemNodeKey: node.key,
       listItemCharacter: character,
-      characterIndentationPixels: (CGFloat(getIndent() + 1) - 0.8) * theme.indentSize
+      characterIndentationPixels: theme.listBulletMargin + (indentLevel * theme.indentSize)
     )
 
     return attributes
