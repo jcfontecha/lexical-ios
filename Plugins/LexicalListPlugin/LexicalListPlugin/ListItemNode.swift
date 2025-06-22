@@ -254,6 +254,34 @@ public class ListItemNode: ElementNode {
     let indentLevel = CGFloat(getIndent())
     let textPadding = theme.listBulletMargin + theme.listBulletTextSpacing + (indentLevel * theme.indentSize)
     attributes[.paddingHead] = textPadding
+    
+    // Apply spacing attributes from theme.listItem if they exist
+    if let listItemAttributes = theme.listItem {
+      if let lineSpacing = listItemAttributes[.lineSpacing] {
+        attributes[.lineSpacing] = lineSpacing
+      }
+      
+      // Check if this is the last item in the list to apply different spacing
+      let isLastItem = (node.getNextSibling() == nil)
+      
+      if let paragraphSpacing = listItemAttributes[.paragraphSpacing] {
+        if isLastItem {
+          // If this is the last item, use listSpacing (space after entire list)
+          if let listSpacing = listItemAttributes[.listSpacing] {
+            attributes[.paragraphSpacing] = listSpacing
+          } else {
+            attributes[.paragraphSpacing] = paragraphSpacing
+          }
+        } else {
+          // Regular spacing between list items
+          attributes[.paragraphSpacing] = paragraphSpacing
+        }
+      }
+      
+      if let paragraphSpacingBefore = listItemAttributes[.paragraphSpacingBefore] {
+        attributes[.paragraphSpacingBefore] = paragraphSpacingBefore
+      }
+    }
 
     if node.getChildren().first is ListNode {
       // Don't apply styles for this list item, because there's another list inside it (don't want to draw two bullets!)
