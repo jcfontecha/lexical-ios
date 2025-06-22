@@ -20,4 +20,5 @@ extension NSAttributedString.Key {
   public static let lineSpacing: NSAttributedString.Key = .init(rawValue: "lineSpacing")
   public static let paragraphSpacingBefore: NSAttributedString.Key = .init(rawValue: "paragraphSpacingBefore")
   public static let paragraphSpacing: NSAttributedString.Key = .init(rawValue: "paragraphSpacing")
+  public static let listSpacing: NSAttributedString.Key = .init(rawValue: "listSpacing")
 }
