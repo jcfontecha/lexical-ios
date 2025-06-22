@@ -21,4 +21,7 @@ extension NSAttributedString.Key {
   public static let paragraphSpacingBefore: NSAttributedString.Key = .init(rawValue: "paragraphSpacingBefore")
   public static let paragraphSpacing: NSAttributedString.Key = .init(rawValue: "paragraphSpacing")
   public static let listSpacing: NSAttributedString.Key = .init(rawValue: "listSpacing")
+  public static let bulletSizeIncrease: NSAttributedString.Key = .init(rawValue: "bulletSizeIncrease")
+  public static let bulletWeight: NSAttributedString.Key = .init(rawValue: "bulletWeight")
+  public static let bulletVerticalOffset: NSAttributedString.Key = .init(rawValue: "bulletVerticalOffset")
 }
