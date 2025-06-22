@@ -397,7 +397,7 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   override public func caretRect(for position: UITextPosition) -> CGRect {
     var rect = super.caretRect(for: position)
     
-    // Get the actual line spacing at cursor position to determine if adjustment is needed
+    // Get the actual spacing at cursor position to determine if adjustment is needed
     guard let textStorage = textStorage as? TextStorage else { return rect }
     
     let cursorLocation = offset(from: beginningOfDocument, to: position)
@@ -405,21 +405,35 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
     guard stringLocation >= 0 && stringLocation < textStorage.length else { return rect }
     
     let paragraphStyle = textStorage.attribute(.paragraphStyle, at: stringLocation, effectiveRange: nil) as? NSParagraphStyle
+    let currentFont = textStorage.attribute(.font, at: stringLocation, effectiveRange: nil) as? UIFont
     let lineSpacing = paragraphStyle?.lineSpacing ?? 0
+    let paragraphSpacing = paragraphStyle?.paragraphSpacing ?? 0
+    let paragraphSpacingBefore = paragraphStyle?.paragraphSpacingBefore ?? 0
     
-    // Only adjust cursor if this specific block has significant line spacing
-    guard lineSpacing > 2.0 else { return rect }
+    // ADJUSTABLE PARAMETERS:
+    let heightReductionMultiplier: CGFloat = 0.6    // How aggressively to shrink cursor (higher = more shrinking)
+    let verticalPositionOffset: CGFloat = 0.25      // Where to position cursor (0.0 = top, 0.5 = middle, 1.0 = bottom)
+    let minimumSpacingThreshold: CGFloat = 2.0      // Minimum spacing before adjustment kicks in
     
-    // Auto-compute adjustment based on actual line spacing at cursor position
-    // More line spacing = more cursor height reduction for better appearance
-    let heightAdjustment = 1.0 + (lineSpacing / 10.0) // e.g., 10pt spacing = 2.0x reduction
-    let verticalOffset: CGFloat = 0.15 // Position cursor near top for natural appearance
+    // Calculate total added spacing that affects cursor appearance
+    let totalAddedSpacing = lineSpacing + paragraphSpacing + paragraphSpacingBefore
     
-    // Make cursor shorter
+    // Only adjust cursor if this specific block has significant spacing
+    guard totalAddedSpacing > minimumSpacingThreshold else { return rect }
+    
+    // Auto-compute adjustment based on spacing relative to font size
+    // The goal is to make cursor look like it only spans the actual text height
+    let fontSize = currentFont?.pointSize ?? 16.0
+    let spacingToFontRatio = totalAddedSpacing / fontSize
+    
+    let heightAdjustment = 1.0 + (spacingToFontRatio * heightReductionMultiplier)
+    let verticalOffset = verticalPositionOffset
+    
+    // Make cursor shorter to compensate for all added spacing
     let originalHeight = rect.size.height
     rect.size.height = originalHeight / heightAdjustment
     
-    // Position cursor higher in the line
+    // Position cursor to appear locked to the visual text height
     let heightDecrease = originalHeight - rect.size.height
     rect.origin.y += heightDecrease * verticalOffset
     
