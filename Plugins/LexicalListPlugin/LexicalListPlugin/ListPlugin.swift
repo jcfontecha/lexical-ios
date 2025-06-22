@@ -71,7 +71,27 @@ open class ListPlugin: Plugin {
         }
         attributes.removeValue(forKey: .underlineStyle)
         attributes.removeValue(forKey: .strikethroughStyle)
-        let bulletDrawRect = firstLineFragment.inset(by: UIEdgeInsets(top: spacingBefore, left: attributeValue.characterIndentationPixels, bottom: 0, right: 0))
+        
+        // Only apply bullet styling to actual bullet characters (•), not numbers
+        var verticalOffset: CGFloat = 0.0
+        if attributeValue.listItemCharacter == "•" {
+          // Make bullet font larger than the text font using configurable values
+          if let currentFont = attributes[.font] as? UIFont {
+            let sizeIncrease = (attributes[.bulletSizeIncrease] as? CGFloat) ?? 3.0
+            let weightRawValue = (attributes[.bulletWeight] as? CGFloat) ?? UIFont.Weight.medium.rawValue
+            let weight = UIFont.Weight(rawValue: weightRawValue)
+            attributes[.font] = UIFont.systemFont(ofSize: currentFont.pointSize + sizeIncrease, weight: weight)
+          }
+          
+          // Apply vertical offset to compensate for larger bullet font
+          verticalOffset = (attributes[.bulletVerticalOffset] as? CGFloat) ?? 0.0
+        }
+        let bulletDrawRect = firstLineFragment.inset(by: UIEdgeInsets(
+          top: spacingBefore + verticalOffset, 
+          left: attributeValue.characterIndentationPixels, 
+          bottom: 0, 
+          right: 0
+        ))
 
         attributeValue.listItemCharacter.draw(in: bulletDrawRect, withAttributes: attributes)
       }
