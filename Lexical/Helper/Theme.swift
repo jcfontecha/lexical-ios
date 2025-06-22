@@ -69,6 +69,14 @@ import Foundation
   /// The spacing between list bullets and text in points.
   public var listBulletTextSpacing: Double = 20.0
 
+  /// Controls cursor height adjustment when line spacing is applied.
+  /// Value of 1.0 means no adjustment, values > 1.0 make cursor shorter.
+  public var cursorHeightAdjustment: Double = 1.0
+  
+  /// Controls cursor vertical position adjustment when line spacing is applied.
+  /// Value of 0.5 centers cursor, values < 0.5 move cursor higher up.
+  public var cursorVerticalOffset: Double = 0.5
+
   /// A set of attributes applied to a custom truncation indicator (a string that is displayed when the text overflows,
   /// such as an ellipsis or "See More" or similar).
   public var truncationIndicatorAttributes: AttributeDict = [:]
