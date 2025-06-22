@@ -62,6 +62,12 @@ import Foundation
 
   /// The width in points of each indentation level.
   public var indentSize: Double = 40.0
+  
+  /// The left margin for list bullets in points.
+  public var listBulletMargin: Double = 16.0
+  
+  /// The spacing between list bullets and text in points.
+  public var listBulletTextSpacing: Double = 20.0
 
   /// A set of attributes applied to a custom truncation indicator (a string that is displayed when the text overflows,
   /// such as an ellipsis or "See More" or similar).
