@@ -35,6 +35,12 @@ public class ListItemNode: ElementNode {
   override public func clone() -> Self {
     Self(key)
   }
+  
+  // Helper method to check if list item is effectively empty (including zero-width space)
+  public func isEffectivelyEmpty() -> Bool {
+    let textContent = self.getTextContent()
+    return textContent.isEmpty || textContent == "\u{200B}"
+  }
 
   override public class func getType() -> NodeType {
     .listItem
@@ -167,13 +173,50 @@ public class ListItemNode: ElementNode {
   }
 
   override public func insertNewAfter(selection: RangeSelection?) throws -> Node? {
+    // Check if current list item is effectively empty (only zero-width space or truly empty)
+    if self.isEffectivelyEmpty() {
+      let paragraph = createParagraphNode()
+      let list = try self.getParentOrThrow()
+      
+      // Replace the current empty list item with a paragraph
+      _ = try self.replace(replaceWith: paragraph)
+      
+      // If list is now empty, remove it too
+      if let listNode = list as? ListNode, listNode.getChildrenSize() == 0 {
+        try listNode.remove()
+      }
+      
+      return paragraph
+    }
+    
+    // Normal case: create new empty list item after current one
     let newElement = ListItemNode()
     _ = try self.insertAfter(nodeToInsert: newElement)
+    
+    // Update list item values to ensure proper bullet rendering
+    // This matches what insertList() does when creating lists via the list button
+    if let parentList = self.getParent() as? ListNode {
+      try updateChildrenListItemValue(list: parentList, children: nil)
+      
+      // Force bullet rendering by ensuring the new list item gets processed
+      // Add a zero-width space that doesn't affect display but triggers rendering
+      let invisibleText = createTextNode(text: "\u{200B}")
+      try newElement.append([invisibleText])
+    }
 
     return newElement
   }
 
   override public func collapseAtStart(selection: RangeSelection) throws -> Bool {
+    // Handle zero-width space case - treat as empty for deletion
+    if self.isEffectivelyEmpty() && self.getTextContent() == "\u{200B}" {
+      // Remove all children to treat as empty list item
+      let children = self.getChildren()
+      for child in children {
+        try child.remove()
+      }
+    }
+    
     let paragraph = createParagraphNode()
     let children = self.getChildren()
     try paragraph.append(children)

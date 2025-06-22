@@ -42,6 +42,11 @@ open class ListPlugin: Plugin {
           return true
         })
 
+      // Custom drawing registration for list bullets
+      // This works for empty list items because:
+      // 1. ListItemNode.getAttributedStringAttributes() creates ListItemAttribute even for empty items
+      // 2. The forced layout update in MarkdownEditor triggers TextKit to process list structure
+      // 3. Custom drawing is called for any paragraph with ListItemAttribute, empty or not
       try editor.registerCustomDrawing(customAttribute: .listItem, layer: .text, granularity: .contiguousParagraphs) {
         attributeKey, attributeValue, layoutManager, characterRange, expandedCharRange, glyphRange, rect, firstLineFragment in
 
@@ -55,6 +60,10 @@ open class ListPlugin: Plugin {
         if characterRange.location != 0 && (textStorage.string as NSString).substring(with: NSRange(location: characterRange.location - 1, length: 1)) != "\n" {
           return
         }
+        
+        // For empty list items that only contain zero-width space, ensure we still draw the bullet
+        let textAtRange = (textStorage.string as NSString).substring(with: characterRange)
+        let isZeroWidthSpaceOnly = textAtRange == "\u{200B}"
 
         let isFirstLine = (glyphRange.location == 0)
 

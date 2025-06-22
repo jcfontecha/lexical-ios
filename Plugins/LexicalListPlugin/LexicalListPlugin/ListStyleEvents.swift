@@ -49,6 +49,12 @@ private func createListOrMerge(node: ElementNode, listType: ListType) throws -> 
   //  listItem.setFormat(node.getFormatType());
   try listItem.setIndent(node.getIndent())
   try listItem.append(node.getChildren())
+  
+  // Ensure empty list items have content to trigger bullet rendering
+  if listItem.getChildrenSize() == 0 {
+    let textNode = createTextNode(text: "\u{200B}") // Zero-width space
+    try listItem.append([textNode])
+  }
 
   if let previousSibling = previousSibling as? ListNode, listType == previousSibling.getListType() {
     try previousSibling.append([listItem])
@@ -156,6 +162,11 @@ public func insertList(editor: Editor, listType: ListType) throws {
           try listItem.setIndent(anchorNode.getIndent())
         }
         try list.append([listItem])
+        // Ensure empty list items have content to trigger bullet rendering
+        if listItem.getChildrenSize() == 0 {
+          let textNode = createTextNode(text: "\u{200B}") // Zero-width space
+          try listItem.append([textNode])
+        }
       } else if let anchorNode = anchorNode as? ListItemNode {
         let parent = try anchorNode.getParentOrThrow()
         try list.append(parent.getChildren())
@@ -311,6 +322,12 @@ internal func handleIndent(_ listItemNode: ListItemNode) throws {
       let newList = createListNode(listType: parent.getListType())
       try newListItem.append([newList])
       try newList.append([listItemNode])
+      
+      // Ensure empty list items have content to trigger bullet rendering
+      if newListItem.getChildrenSize() == 1 && newListItem.getFirstChild() is ListNode {
+        // This list item only contains a nested list, so we don't need placeholder text
+        // The nested list will handle its own items
+      }
 
       if let previousSibling {
         _ = try previousSibling.insertAfter(nodeToInsert: newListItem)
