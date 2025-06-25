@@ -17,9 +17,20 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool
 }
 
+/// Protocol for customizing cursor appearance
+@objc public protocol TextViewCursorDelegate: NSObjectProtocol {
+  /// Called to determine the cursor height for a given position
+  /// - Parameters:
+  ///   - textView: The text view requesting cursor customization
+  ///   - position: The text position where the cursor will be displayed
+  ///   - defaultRect: The default cursor rect calculated by the system
+  /// - Returns: The desired cursor rect, or nil to use the default
+  @objc optional func textView(_ textView: TextView, cursorRectFor position: UITextPosition, defaultRect: CGRect) -> CGRect
+}
+
 /// Lexical's subclass of UITextView. Note that using this can be dangerous, if you make changes that Lexical does not expect.
 @objc public class TextView: UITextView {
-  let editor: Editor
+  public let editor: Editor
 
   internal let pasteboard = UIPasteboard.general
   internal let pasteboardIdentifier = "x-lexical-nodes"
@@ -30,6 +41,7 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   // private methods, and the first time we find out is when our delegate method is called. @amyworrall
   internal var interceptNextSelectionChangeAndReplaceWithRange: NSRange?
   weak var lexicalDelegate: LexicalTextViewDelegate?
+  @objc public weak var cursorDelegate: TextViewCursorDelegate?
   private var placeholderLabel: UILabel
 
   private let useInputDelegateProxy: Bool
@@ -395,7 +407,15 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   // MARK: - Cursor Height Adjustment
   
   override public func caretRect(for position: UITextPosition) -> CGRect {
-    var rect = super.caretRect(for: position)
+    let defaultRect = super.caretRect(for: position)
+    
+    // Check if delegate wants to customize the cursor
+    if let customRect = cursorDelegate?.textView?(self, cursorRectFor: position, defaultRect: defaultRect) {
+      return customRect
+    }
+    
+    // Fall back to the existing implementation
+    var rect = defaultRect
     
     // Get the actual spacing at cursor position to determine if adjustment is needed
     guard let textStorage = textStorage as? TextStorage else { return rect }
