@@ -37,6 +37,8 @@ internal func onInsertTextFromUITextView(text: String, editor: Editor, updateMod
       try selection.insertText(text)
     }
   }
+  // After the editor state is updated, refresh placeholder visibility once.
+  editor.frontend?.showPlaceholderText()
 }
 
 internal func onInsertLineBreakFromUITextView(editor: Editor) throws {

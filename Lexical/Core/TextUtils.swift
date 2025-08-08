@@ -42,6 +42,16 @@ internal func canShowPlaceholder(isComposing: Bool) -> Bool {
     guard let childNode = childNode as? ElementNode else { return true }
 
     if childNode.type != NodeType.paragraph {
+      // Allow placeholder for a single, empty heading (start-with-title UX)
+      if childNode.type == NodeType.heading {
+        let nodeChildren = childNode.getChildren()
+        for nodeChild in nodeChildren {
+          if !isTextNode(nodeChild) {
+            return false
+          }
+        }
+        return true
+      }
       return false
     }
 

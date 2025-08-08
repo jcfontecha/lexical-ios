@@ -260,7 +260,13 @@ public extension LexicalViewDelegate {
   /// This needs a refactor. Currently the LexicalView supports setting the placeholder text as part of the initialiser, which
   /// works correctly. However setting the placeholder text later through this property will not properly proxy it through to the
   /// TextView. This is a bug and should be fixed.
-  public var placeholderText: LexicalPlaceholderText?
+  public var placeholderText: LexicalPlaceholderText? {
+    didSet {
+      guard let placeholderText else { return }
+      // Proxy through to the underlying text view so updates after init take effect
+      textView.setPlaceholderText(placeholderText.text, textColor: placeholderText.color, font: placeholderText.font)
+    }
+  }
 
   /// Returns the current selected text range according to the underlying UITextView.
   ///
