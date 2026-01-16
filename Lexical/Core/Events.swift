@@ -183,7 +183,7 @@ internal func onSelectionChange(editor: Editor) {
         lexicalSelection.format = anchorNode.getFormat()
       case .element:
         lexicalSelection.format = TextFormat()
-      default:
+      case .range, .node, .grid:
         break
       }
       editor.dispatchCommand(type: .selectionChange, payload: nil)
