@@ -13,6 +13,7 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   func textViewDidBeginEditing(textView: TextView)
   func textViewDidEndEditing(textView: TextView)
   func textViewShouldChangeText(_ textView: UITextView, range: NSRange, replacementText text: String) -> Bool
+  @available(iOS, deprecated: 17.0, message: "Use textView(_:primaryActionFor:defaultAction:) with UITextItem instead")
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool
 }
 
@@ -430,6 +431,7 @@ private class TextViewDelegate: NSObject, UITextViewDelegate {
     textView.lexicalDelegate?.textViewDidEndEditing(textView: textView)
   }
 
+  @available(iOS, deprecated: 17.0, message: "Use textView(_:primaryActionFor:defaultAction:) with UITextItem instead")
   public func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
     guard let textView = textView as? TextView else { return false }
 

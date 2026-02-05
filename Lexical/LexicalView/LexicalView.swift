@@ -18,10 +18,12 @@ public protocol LexicalViewDelegate: NSObjectProtocol {
   func textViewDidBeginEditing(textView: LexicalView)
   func textViewDidEndEditing(textView: LexicalView)
   func textViewShouldChangeText(_ textView: LexicalView, range: NSRange, replacementText text: String) -> Bool
+  @available(iOS, deprecated: 17.0, message: "Use textView(_:primaryActionFor:defaultAction:) with UITextItem instead")
   func textView(_ textView: LexicalView, shouldInteractWith URL: URL, in selection: RangeSelection?, interaction: UITextItemInteraction) -> Bool
 }
 
 public extension LexicalViewDelegate {
+  @available(iOS, deprecated: 17.0, message: "Use textView(_:primaryActionFor:defaultAction:) with UITextItem instead")
   func textView(_ textView: LexicalView, shouldInteractWith URL: URL, in selection: RangeSelection?, interaction: UITextItemInteraction) -> Bool {
     return true
   }
@@ -484,6 +486,7 @@ public extension LexicalViewDelegate {
 // MARK: - LexicalTextViewDelegate
 
 extension LexicalView: LexicalTextViewDelegate {
+  @available(iOS, deprecated: 17.0, message: "Use textView(_:primaryActionFor:defaultAction:) with UITextItem instead")
   func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
     var selection: RangeSelection?
 
