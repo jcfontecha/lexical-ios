@@ -18,9 +18,14 @@ open class StatePersistencePlugin: Plugin {
 
   public func tearDown() {
     unregister?()
+    unregister = nil
   }
 
   public init() {}
+
+  deinit {
+    unregister?()
+  }
 
   public func generateStateJsonString() throws -> String {
     guard let editor = getActiveEditor() else {
