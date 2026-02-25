@@ -22,7 +22,6 @@ As of 2026-02-25:
 
 Current fork-only changes are in:
 
-- `LIST_STYLING_CUSTOMIZATION.md`
 - `Lexical/Core/Events.swift`
 - `Lexical/Core/TextUtils.swift`
 - `Lexical/Helper/AttributesUtils.swift`
