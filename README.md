@@ -10,6 +10,49 @@ Lexical iOS is in pre-release with no guarantee of support.
 
 For changes between versions, see the [Lexical iOS Changelog](https://github.com/facebook/lexical-ios/blob/main/Lexical/Documentation.docc/Changelog.md).
 
+## Fork Divergence (Public)
+
+This repository tracks `facebook/lexical-ios` and is intentionally diverged for list rendering and cursor/placeholder behavior.
+
+As of 2026-02-25:
+
+- `upstream/main` is included via the `upstream` remote.
+- This branch is `7` commits ahead of `upstream/main` and `0` commits behind.
+- Upstream hotfixes from `main` are included (including event switch hardening, nil-coalescing cleanup, and iOS 17 deprecation annotations).
+
+Current fork-only changes are in:
+
+- `LIST_STYLING_CUSTOMIZATION.md`
+- `Lexical/Core/Events.swift`
+- `Lexical/Core/TextUtils.swift`
+- `Lexical/Helper/AttributesUtils.swift`
+- `Lexical/Helper/NSAttributedStringKey+Extensions.swift`
+- `Lexical/Helper/Theme.swift`
+- `Lexical/LexicalView/LexicalView.swift`
+- `Lexical/TextView/TextView.swift`
+- `Plugins/LexicalListPlugin/LexicalListPlugin/ListItemNode.swift`
+- `Plugins/LexicalListPlugin/LexicalListPlugin/ListPlugin.swift`
+- `Plugins/LexicalListPlugin/LexicalListPlugin/ListStyleEvents.swift`
+
+### Why these diffs exist
+
+1. Better list UX and appearance control (`Theme.swift`, `ListItemNode.swift`, `ListPlugin.swift`, `ListStyleEvents.swift`).
+2. Placeholder behavior that updates after insert and supports empty single-heading documents (`TextUtils.swift`, `Events.swift`).
+3. Cursor rendering options (`TextView.swift`, `LexicalView.swift`, `Theme.swift`).
+
+### Minor shortcuts kept (and what they enable)
+
+- Zero-width-space insertion for empty list items.
+  - Enables reliable bullet rendering in custom-drawing paths for otherwise-empty list nodes.
+  - Tradeoff: synthetic empty-text content is introduced and must be kept in sync with list lifecycle transitions.
+
+- Hardcoded cursor-adjustment parameters inside `caretRect(for:)`.
+  - Enables quick per-block visual tuning to avoid excessive visual height from spacing.
+  - Tradeoff: behavior is not yet configurable through public `Theme` values.
+
+- Theme-driven list spacing extension points were added for pragmatic styling control.
+  - Enables quick UX iteration for list margins/indenting without changing core layout algorithms.
+
 ## Playground
 
 We have a sample playground app demonstrating some of Lexical's features:
