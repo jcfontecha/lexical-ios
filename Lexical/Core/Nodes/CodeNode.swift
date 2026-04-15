@@ -10,22 +10,30 @@ import UIKit
 // This is an ObjC class because it needs to conform to NSObject's equality, otherwise the Layout Manager
 // can't iterate through attributes properly.
 @objc public class CodeBlockCustomDrawingAttributes: NSObject {
-  public init(background: UIColor, border: UIColor, borderWidth: CGFloat) {
+  public init(background: UIColor, border: UIColor, borderWidth: CGFloat, cornerRadius: CGFloat = 0, horizontalInset: CGFloat = 0) {
     self.background = background
     self.border = border
     self.borderWidth = borderWidth
+    self.cornerRadius = cornerRadius
+    self.horizontalInset = horizontalInset
   }
 
   let background: UIColor
   let border: UIColor
   let borderWidth: CGFloat
+  let cornerRadius: CGFloat
+  let horizontalInset: CGFloat
 
   override public func isEqual(_ object: Any?) -> Bool {
     let lhs = self
     guard let rhs = object as? CodeBlockCustomDrawingAttributes else {
       return false
     }
-    return lhs.background == rhs.background && lhs.border == rhs.border && lhs.borderWidth == rhs.borderWidth
+    return lhs.background == rhs.background
+      && lhs.border == rhs.border
+      && lhs.borderWidth == rhs.borderWidth
+      && lhs.cornerRadius == rhs.cornerRadius
+      && lhs.horizontalInset == rhs.horizontalInset
   }
 }
 
@@ -139,11 +147,32 @@ extension CodeNode {
     get {
       return { attributeKey, attributeValue, layoutManager, attributeRunCharacterRange, granularityExpandedCharacterRange, glyphRange, rect, firstLineFragment in
         guard let context = UIGraphicsGetCurrentContext(), let attributeValue = attributeValue as? CodeBlockCustomDrawingAttributes else { return }
-        context.setFillColor(attributeValue.background.cgColor)
-        context.fill(rect)
 
-        context.setStrokeColor(attributeValue.border.cgColor)
-        context.stroke(rect, width: attributeValue.borderWidth)
+        let rect = attributeValue.horizontalInset > 0
+          ? rect.insetBy(dx: attributeValue.horizontalInset, dy: 0)
+          : rect
+
+        if attributeValue.cornerRadius > 0 {
+          let path = UIBezierPath(roundedRect: rect, cornerRadius: attributeValue.cornerRadius)
+          context.saveGState()
+          context.addPath(path.cgPath)
+          context.setFillColor(attributeValue.background.cgColor)
+          context.fillPath()
+          if attributeValue.borderWidth > 0 {
+            context.addPath(path.cgPath)
+            context.setStrokeColor(attributeValue.border.cgColor)
+            context.setLineWidth(attributeValue.borderWidth)
+            context.strokePath()
+          }
+          context.restoreGState()
+        } else {
+          context.setFillColor(attributeValue.background.cgColor)
+          context.fill(rect)
+          if attributeValue.borderWidth > 0 {
+            context.setStrokeColor(attributeValue.border.cgColor)
+            context.stroke(rect, width: attributeValue.borderWidth)
+          }
+        }
       }
     }
   }
