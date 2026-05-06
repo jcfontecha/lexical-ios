@@ -198,13 +198,31 @@ public class ListItemNode: ElementNode {
     if let parentList = self.getParent() as? ListNode {
       try updateChildrenListItemValue(list: parentList, children: nil)
       
-      // Force bullet rendering by ensuring the new list item gets processed
-      // Add a zero-width space that doesn't affect display but triggers rendering
-      let invisibleText = createTextNode(text: "\u{200B}")
-      try newElement.append([invisibleText])
+      // Force bullet rendering for genuinely empty new items. When inserting in the
+      // middle/start of a text node, RangeSelection.insertParagraph() will move real
+      // content into this new item after insertNewAfter returns; seeding ZWSP here
+      // would leak an invisible character into the split item.
+      if shouldSeedZeroWidthSpaceAfterParagraphInsertion(selection: selection) {
+        let invisibleText = createTextNode(text: "\u{200B}")
+        try newElement.append([invisibleText])
+      }
     }
 
     return newElement
+  }
+
+  private func shouldSeedZeroWidthSpaceAfterParagraphInsertion(selection: RangeSelection?) -> Bool {
+    guard let selection, selection.isCollapsed(), selection.anchor.type == .text else {
+      return true
+    }
+
+    guard let anchorNode = try? selection.anchor.getNode() as? TextNode,
+          let parent = anchorNode.getParent(),
+          parent.key == self.key else {
+      return true
+    }
+
+    return selection.anchor.offset >= anchorNode.getTextContentSize()
   }
 
   override public func collapseAtStart(selection: RangeSelection) throws -> Bool {

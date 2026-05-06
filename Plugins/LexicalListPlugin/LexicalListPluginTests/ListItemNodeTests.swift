@@ -27,6 +27,45 @@ class ListItemNodeTests: XCTestCase {
     view = nil
   }
 
+  func testInsertParagraphInMiddleOfListItemSplitsIntoSiblingItems() throws {
+    guard let editor else {
+      XCTFail("Editor unexpectedly nil")
+      return
+    }
+
+    try editor.update {
+      guard
+        let editorState = getActiveEditorState(),
+        let rootNode = editorState.getRootNode()
+      else {
+        XCTFail("should have editor state")
+        return
+      }
+
+      let list = ListNode(listType: .bullet, start: 1)
+      let item = ListItemNode()
+      let text = TextNode(text: "first")
+      try item.append([text])
+      try list.append([item])
+      try rootNode.append([list])
+
+      let point = Point(key: text.key, offset: 2, type: .text)
+      editorState.selection = RangeSelection(anchor: point, focus: point, format: TextFormat())
+
+      guard let selection = try getSelection() as? RangeSelection else {
+        XCTFail("Expected range selection")
+        return
+      }
+      try selection.insertParagraph()
+
+      XCTAssertEqual(list.getChildrenSize(), 2)
+      let firstItem = list.getChildAtIndex(index: 0) as? ListItemNode
+      let secondItem = list.getChildAtIndex(index: 1) as? ListItemNode
+      XCTAssertEqual(firstItem?.getTextContent().replacingOccurrences(of: "\n", with: ""), "fi")
+      XCTAssertEqual(secondItem?.getTextContent().replacingOccurrences(of: "\u{200B}", with: ""), "rst")
+    }
+  }
+
   func testItemCharacterWithNestedNumberedList() throws {
     guard let editor else {
       XCTFail("Editor unexpectedly nil")
