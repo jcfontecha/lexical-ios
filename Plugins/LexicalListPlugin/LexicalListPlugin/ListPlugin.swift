@@ -61,10 +61,6 @@ open class ListPlugin: Plugin {
           return
         }
         
-        // For empty list items that only contain zero-width space, ensure we still draw the bullet
-        let textAtRange = (textStorage.string as NSString).substring(with: characterRange)
-        let isZeroWidthSpaceOnly = textAtRange == "\u{200B}"
-
         let isFirstLine = (glyphRange.location == 0)
 
         var attributes = textStorage.attributes(at: characterRange.location, effectiveRange: nil)

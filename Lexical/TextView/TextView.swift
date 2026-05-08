@@ -40,6 +40,8 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   // This is to work around a UIKit issue where, in situations like autocomplete, UIKit changes our selection via
   // private methods, and the first time we find out is when our delegate method is called. @amyworrall
   internal var interceptNextSelectionChangeAndReplaceWithRange: NSRange?
+  internal var nativeSelectionUpdateRecorder: ((NSRange) -> Void)?
+  private var pendingNativeSelectionDuringTextStorageEditing: NSRange?
   weak var lexicalDelegate: LexicalTextViewDelegate?
   @objc public weak var cursorDelegate: TextViewCursorDelegate?
   private var placeholderLabel: UILabel
@@ -138,7 +140,13 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
       inputDelegateProxy.isSuspended = false
     }
 
+    if previousSelectedRange.length > 0 {
+      syncLexicalSelectionFromNativeRange(previousSelectedRange)
+    }
+
     editor.dispatchCommand(type: .deleteCharacter, payload: true)
+    syncNativeSelectionFromLexical()
+    editor.frontend?.showPlaceholderText()
 
     if previousSelectedRange.length > 0 {
       // Expect new selection to be on the start of selection
@@ -204,8 +212,18 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
     }
 
     textStorage.mode = TextStorageEditingMode.controllerMode
-    editor.dispatchCommand(type: .insertText, payload: text)
+    _ = editor.dispatchCommand(type: .insertText, payload: text)
     textStorage.mode = TextStorageEditingMode.none
+
+    // Structural paragraph insertion can legally keep the native range at the
+    // same UTF-16 location (for example exiting an empty list item into an empty
+    // paragraph with a zero-width text anchor). Treating that as an unexpected
+    // UIKit selection change pushes the editor back to an element selection and
+    // makes the caret briefly jump to stale/default geometry.
+    if text == "\n" || text == "\u{2029}" {
+      syncNativeSelectionFromLexical()
+      return
+    }
 
     // check if we need to send a selectionChanged (i.e. something unexpected happened)
     if selectedRange.length != 0 || selectedRange.location != expectedSelectionLocation {
@@ -313,6 +331,8 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
             internallyMarkNodeAsDirty(node: node, cause: .userInitiated)
           }
 
+          let committedSelection = RangeSelection(anchor: focus, focus: focus, format: TextFormat())
+          getActiveEditorState()?.selection = committedSelection
           editor.compositionKey = nil
         }
       } catch {}
@@ -340,6 +360,7 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
     let nativeSelection = try createNativeSelection(from: selection, editor: editor)
 
     if let range = nativeSelection.range {
+      nativeSelectionUpdateRecorder?(range)
       selectedRange = range
     }
   }
@@ -366,8 +387,7 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
     var shouldShow = false
     do {
       try editor.read {
-        guard let root = getRoot() else { return }
-        shouldShow = root.getTextContentSize() == 0
+        shouldShow = isRootTextContentEmpty(isEditorComposing: editor.isComposing(), trim: false)
       }
       if !shouldShow {
         hidePlaceholderLabel()
@@ -404,59 +424,303 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
     return r
   }
   
-  // MARK: - Cursor Height Adjustment
-  
+  // MARK: - Cursor Geometry
+
+  @objc public func measuredCaretRect(for position: UITextPosition) -> CGRect {
+    caretRect(for: position)
+  }
+
   override public func caretRect(for position: UITextPosition) -> CGRect {
-    let defaultRect = super.caretRect(for: position)
-    
+    let pendingNativeSelectionRange = pendingNativeSelectionDuringTextStorageEditing
+    let nativeSelectionRange = selectedRange
+    let currentInsertionPosition = nativeSelectionRange.length == 0
+      ? self.position(from: beginningOfDocument, offset: nativeSelectionRange.location)
+      : nil
+    let measuringPosition = currentInsertionPosition ?? position
+    let defaultRect = pendingNativeSelectionRange.map { provisionalCaretRect(for: $0.location) }
+      ?? super.caretRect(for: measuringPosition)
+
     // Check if delegate wants to customize the cursor
     if let customRect = cursorDelegate?.textView?(self, cursorRectFor: position, defaultRect: defaultRect) {
       return customRect
     }
-    
-    // Fall back to the existing implementation
+
+    let cursorLocation = pendingNativeSelectionRange?.location
+      ?? currentInsertionPosition.map { _ in nativeSelectionRange.location }
+      ?? offset(from: beginningOfDocument, to: position)
+    return fontMetricsCaretRect(
+      atCharacterOffset: cursorLocation,
+      defaultRect: defaultRect,
+      usesDefaultVerticalMetrics: pendingNativeSelectionRange == nil)
+  }
+
+  internal func prepareForNativeSelectionDuringTextStorageEditing(_ nativeSelection: NativeSelection?) {
+    pendingNativeSelectionDuringTextStorageEditing = nativeSelection?.range
+  }
+
+  private func provisionalCaretRect(for location: Int) -> CGRect {
+    let height = font?.lineHeight ?? typingAttributesFontLineHeight() ?? 17
+    return CGRect(
+      x: textContainerInset.left + textContainer.lineFragmentPadding,
+      y: textContainerInset.top,
+      width: 2,
+      height: height
+    )
+  }
+
+  private func typingAttributesFontLineHeight() -> CGFloat? {
+    (typingAttributes[.font] as? UIFont)?.lineHeight
+  }
+
+  internal func fontMetricsCaretRect(
+    atCharacterOffset cursorLocation: Int,
+    defaultRect: CGRect,
+    usesDefaultVerticalMetrics: Bool = false
+  ) -> CGRect {
+    guard let textStorage = textStorage as? TextStorage else { return defaultRect }
+    return Self.fontMetricsCaretRect(
+      atCharacterOffset: cursorLocation,
+      defaultRect: defaultRect,
+      usesDefaultVerticalMetrics: usesDefaultVerticalMetrics,
+      textStorage: textStorage,
+      layoutManager: layoutManager,
+      textContainer: textContainer,
+      textContainerInset: textContainerInset)
+  }
+
+  private func syncNativeSelectionFromLexical() {
+    try? editor.read {
+      guard let selection = try? getSelection() as? RangeSelection else { return }
+      try? updateNativeSelection(from: selection)
+    }
+    syncTypingAttributesFromCaret()
+  }
+
+  internal func syncTypingAttributesFromCaret() {
+    guard let textStorage = textStorage as? TextStorage,
+      textStorage.length > 0
+    else {
+      return
+    }
+
+    let text = textStorage.string as NSString
+    guard let location = Self.caretAttributeLocation(for: selectedRange.location, text: text) else {
+      return
+    }
+
+    typingAttributes = textStorage.attributes(at: location, effectiveRange: nil)
+  }
+
+  private func syncLexicalSelectionFromNativeRange(_ range: NSRange) {
+    try? editor.update {
+      let nativeSelection = NativeSelection(range: range, affinity: .forward)
+      guard let editorState = getActiveEditorState() else { return }
+
+      if !(try getSelection() is RangeSelection) {
+        guard let newSelection = RangeSelection(nativeSelection: nativeSelection) else {
+          return
+        }
+        editorState.selection = newSelection
+      }
+
+      guard let selection = try getSelection() as? RangeSelection else { return }
+      try selection.applyNativeSelection(nativeSelection)
+    }
+  }
+
+  internal static func fontMetricsCaretRect(
+    atCharacterOffset cursorLocation: Int,
+    defaultRect: CGRect,
+    usesDefaultVerticalMetrics: Bool = false,
+    textStorage: NSTextStorage,
+    layoutManager: NSLayoutManager,
+    textContainer: NSTextContainer,
+    textContainerInset: UIEdgeInsets
+  ) -> CGRect {
+    guard let characterLocation = caretAttributeLocation(for: cursorLocation, text: textStorage.string as NSString),
+          let font = textStorage.attribute(.font, at: characterLocation, effectiveRange: nil) as? UIFont else {
+      return defaultRect
+    }
+
     var rect = defaultRect
-    
-    // Get the actual spacing at cursor position to determine if adjustment is needed
-    guard let textStorage = textStorage as? TextStorage else { return rect }
-    
-    let cursorLocation = offset(from: beginningOfDocument, to: position)
-    let stringLocation = min(max(cursorLocation, 0), textStorage.length - 1)
-    guard stringLocation >= 0 && stringLocation < textStorage.length else { return rect }
-    
-    let paragraphStyle = textStorage.attribute(.paragraphStyle, at: stringLocation, effectiveRange: nil) as? NSParagraphStyle
-    let currentFont = textStorage.attribute(.font, at: stringLocation, effectiveRange: nil) as? UIFont
-    let lineSpacing = paragraphStyle?.lineSpacing ?? 0
-    let paragraphSpacing = paragraphStyle?.paragraphSpacing ?? 0
-    let paragraphSpacingBefore = paragraphStyle?.paragraphSpacingBefore ?? 0
-    
-    // ADJUSTABLE PARAMETERS:
-    let heightReductionMultiplier: CGFloat = 0.6    // How aggressively to shrink cursor (higher = more shrinking)
-    let verticalPositionOffset: CGFloat = 0.25      // Where to position cursor (0.0 = top, 0.5 = middle, 1.0 = bottom)
-    let minimumSpacingThreshold: CGFloat = 2.0      // Minimum spacing before adjustment kicks in
-    
-    // Calculate total added spacing that affects cursor appearance
-    let totalAddedSpacing = lineSpacing + paragraphSpacing + paragraphSpacingBefore
-    
-    // Only adjust cursor if this specific block has significant spacing
-    guard totalAddedSpacing > minimumSpacingThreshold else { return rect }
-    
-    // Auto-compute adjustment based on spacing relative to font size
-    // The goal is to make cursor look like it only spans the actual text height
-    let fontSize = currentFont?.pointSize ?? 16.0
-    let spacingToFontRatio = totalAddedSpacing / fontSize
-    
-    let heightAdjustment = 1.0 + (spacingToFontRatio * heightReductionMultiplier)
-    let verticalOffset = verticalPositionOffset
-    
-    // Make cursor shorter to compensate for all added spacing
-    let originalHeight = rect.size.height
-    rect.size.height = originalHeight / heightAdjustment
-    
-    // Position cursor to appear locked to the visual text height
-    let heightDecrease = originalHeight - rect.size.height
-    rect.origin.y += heightDecrease * verticalOffset
-    
+    rect.size.height = font.lineHeight
+
+    let glyphLocation = min(characterLocation, max(textStorage.length - 1, 0))
+    guard textStorage.length > 0, glyphLocation >= 0 else {
+      return verticallyCenter(rect, in: defaultRect, minimumY: textContainerInset.top)
+    }
+
+    layoutManager.ensureLayout(for: textContainer)
+    let glyphIndex = layoutManager.glyphIndexForCharacter(at: glyphLocation)
+    guard glyphIndex < layoutManager.numberOfGlyphs else {
+      return verticallyCenter(rect, in: defaultRect, minimumY: textContainerInset.top)
+    }
+
+    let lineFragmentRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+    let usedLineFragmentRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+    let fallbackLineMidY = caretLineMidY(
+      atCharacterOffset: cursorLocation,
+      characterLocation: characterLocation,
+      textStorage: textStorage)
+    rect.origin.x = caretX(
+      atCharacterOffset: cursorLocation,
+      characterLocation: characterLocation,
+      glyphIndex: glyphIndex,
+      textStorage: textStorage,
+      layoutManager: layoutManager,
+      textContainer: textContainer,
+      textContainerInset: textContainerInset,
+      fallbackX: rect.origin.x)
+    let text = textStorage.string as NSString
+    if cursorLocation >= textStorage.length,
+       textStorage.length > 0,
+       isLineBoundary(text.character(at: textStorage.length - 1)) {
+      rect.origin.y = textContainerInset.top + fallbackLineMidY - rect.height / 2
+      rect.origin.y = max(rect.origin.y, textContainerInset.top + max(lineFragmentRect.minY, 0))
+      return rect
+    }
+    let lineMidY = usedLineFragmentRect.isEmpty ? fallbackLineMidY : usedLineFragmentRect.midY
+    rect.origin.y = textContainerInset.top + lineMidY - rect.height / 2
+    rect.origin.y = max(rect.origin.y, textContainerInset.top + max(lineFragmentRect.minY, 0))
+
+    return rect
+  }
+
+  private static func caretLineMidY(
+    atCharacterOffset cursorLocation: Int,
+    characterLocation: Int,
+    textStorage: NSTextStorage
+  ) -> CGFloat {
+    let text = textStorage.string as NSString
+    guard text.length > 0 else { return 0 }
+
+    let targetLineStart = lineStartLocation(containing: cursorLocation, text: text)
+    var lineStart = 0
+    var y: CGFloat = 0
+
+    while lineStart < targetLineStart {
+      let lineEnd = nextLineBoundary(startingAt: lineStart, text: text)
+      y += lineAdvance(
+        atCharacterLocation: max(lineStart, min(lineEnd, text.length - 1)),
+        textStorage: textStorage)
+      lineStart = min(lineEnd + 1, text.length)
+    }
+
+    if targetLineStart > 0 {
+      let paragraphStyle = textStorage.attribute(.paragraphStyle, at: characterLocation, effectiveRange: nil) as? NSParagraphStyle
+      y += paragraphStyle?.paragraphSpacingBefore ?? 0
+    }
+
+    let currentLineHeight = lineHeight(
+      atCharacterLocation: characterLocation,
+      textStorage: textStorage)
+    return y + currentLineHeight / 2
+  }
+
+  private static func nextLineBoundary(startingAt startLocation: Int, text: NSString) -> Int {
+    var location = max(startLocation, 0)
+    while location < text.length {
+      if isLineBoundary(text.character(at: location)) {
+        return location
+      }
+      location += 1
+    }
+    return text.length
+  }
+
+  private static func lineAdvance(atCharacterLocation characterLocation: Int, textStorage: NSTextStorage) -> CGFloat {
+    let paragraphStyle = textStorage.attribute(.paragraphStyle, at: characterLocation, effectiveRange: nil) as? NSParagraphStyle
+    return lineHeight(atCharacterLocation: characterLocation, textStorage: textStorage)
+      + (paragraphStyle?.paragraphSpacing ?? 0)
+  }
+
+  private static func lineHeight(atCharacterLocation characterLocation: Int, textStorage: NSTextStorage) -> CGFloat {
+    let font = textStorage.attribute(.font, at: characterLocation, effectiveRange: nil) as? UIFont
+    let paragraphStyle = textStorage.attribute(.paragraphStyle, at: characterLocation, effectiveRange: nil) as? NSParagraphStyle
+    return max(font?.lineHeight ?? LexicalConstants.defaultFont.lineHeight, paragraphStyle?.minimumLineHeight ?? 0)
+  }
+
+  private static func caretX(
+    atCharacterOffset cursorLocation: Int,
+    characterLocation: Int,
+    glyphIndex: Int,
+    textStorage: NSTextStorage,
+    layoutManager: NSLayoutManager,
+    textContainer: NSTextContainer,
+    textContainerInset: UIEdgeInsets,
+    fallbackX: CGFloat
+  ) -> CGFloat {
+    let text = textStorage.string as NSString
+    let paragraphStyle = textStorage.attribute(.paragraphStyle, at: characterLocation, effectiveRange: nil) as? NSParagraphStyle
+    let lineStartX = textContainerInset.left + textContainer.lineFragmentPadding + (paragraphStyle?.firstLineHeadIndent ?? 0)
+
+    if cursorLocation <= 0 {
+      return lineStartX
+    }
+
+    let targetOffset = min(max(cursorLocation, 0), textStorage.length)
+    let lineStart = lineStartLocation(containing: targetOffset, text: text)
+    guard targetOffset > lineStart else {
+      return lineStartX
+    }
+
+    let characterRange = NSRange(location: lineStart, length: targetOffset - lineStart)
+    if characterRange.length > 0 {
+      let linePrefix = textStorage.attributedSubstring(from: characterRange)
+      let measuredWidth = linePrefix.boundingRect(
+        with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading],
+        context: nil
+      ).width
+      let computedX = lineStartX + measuredWidth
+      if computedX.isFinite {
+        return computedX
+      }
+    }
+
+    let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
+    let computedX = textContainerInset.left + textContainer.lineFragmentPadding + glyphLocation.x
+    if computedX.isFinite {
+      return computedX
+    }
+
+    return fallbackX <= textContainerInset.left + textContainer.lineFragmentPadding ? lineStartX : fallbackX
+  }
+
+  private static func lineStartLocation(containing cursorLocation: Int, text: NSString) -> Int {
+    guard cursorLocation > 0 else { return 0 }
+    var location = min(cursorLocation, text.length)
+    while location > 0 {
+      let previous = text.character(at: location - 1)
+      if isLineBoundary(previous) {
+        return location
+      }
+      location -= 1
+    }
+    return 0
+  }
+
+  private static func caretAttributeLocation(for cursorLocation: Int, text: NSString) -> Int? {
+    let textLength = text.length
+    guard textLength > 0 else { return nil }
+    if cursorLocation < textLength {
+      let characterLocation = max(cursorLocation, 0)
+      if cursorLocation > 0, isLineBoundary(text.character(at: characterLocation)) {
+        return cursorLocation - 1
+      }
+      return characterLocation
+    }
+    return textLength - 1
+  }
+
+  private static func isLineBoundary(_ character: unichar) -> Bool {
+    character == 0x000A || character == 0x2028 || character == 0x2029
+  }
+
+  private static func verticallyCenter(_ rect: CGRect, in defaultRect: CGRect, minimumY: CGFloat) -> CGRect {
+    var rect = rect
+    rect.origin.y = defaultRect.midY - rect.height / 2
+    rect.origin.y = max(rect.origin.y, minimumY)
     return rect
   }
 }
@@ -476,6 +740,7 @@ private class TextViewDelegate: NSObject, UITextViewDelegate {
     }
 
     onSelectionChange(editor: textView.editor)
+    textView.syncTypingAttributesFromCaret()
   }
 
   public func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {

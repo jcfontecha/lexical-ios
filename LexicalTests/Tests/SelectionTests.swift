@@ -1074,6 +1074,152 @@ class SelectionTests: XCTestCase {
     }
   }
 
+  func testDeletingSelectedHeadingTextPreservesHeadingNode() throws {
+    let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
+    let editor = view.editor
+
+    try editor.update {
+      guard let rootNode = editor.getEditorState().nodeMap[kRootNodeKey] as? RootNode else {
+        XCTFail("Failed to get rootNode")
+        return
+      }
+
+      for child in rootNode.getChildren() {
+        try child.remove()
+      }
+
+      let headingNode = HeadingNode(tag: .h1)
+      let textNode = TextNode()
+      try textNode.setText("Selected heading")
+      try headingNode.append([textNode])
+      try rootNode.append([headingNode])
+
+      let anchor = Point(key: textNode.key, offset: 0, type: .text)
+      let focus = Point(key: textNode.key, offset: textNode.getTextContentSize(), type: .text)
+      getActiveEditorState()?.selection = RangeSelection(anchor: anchor, focus: focus, format: TextFormat())
+
+      try getSelectionAssumingRangeSelection().deleteCharacter(isBackwards: true)
+
+      let firstChild = try XCTUnwrap(rootNode.getFirstChild() as? HeadingNode)
+      XCTAssertEqual(firstChild.getTag(), .h1)
+      XCTAssertEqual(firstChild.getTextContent(), "\u{200B}")
+
+      let selection = getSelectionAssumingRangeSelection()
+      XCTAssertEqual(selection.anchor.type, .text)
+      XCTAssertEqual(selection.anchor.offset, 0)
+      XCTAssertEqual(try selection.anchor.getNode().getParent()?.key, firstChild.key)
+    }
+  }
+
+  func testDeletingSelectedQuoteAndCodeTextPreservesFormattedBlockNode() throws {
+    let cases: [(name: String, makeNode: () -> ElementNode, expectedType: NodeType)] = [
+      ("quote", { QuoteNode() }, .quote),
+      ("code", { CodeNode() }, .code),
+    ]
+
+    for testCase in cases {
+      let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
+      let editor = view.editor
+
+      try editor.update {
+        guard let rootNode = editor.getEditorState().nodeMap[kRootNodeKey] as? RootNode else {
+          XCTFail("Failed to get rootNode")
+          return
+        }
+
+        for child in rootNode.getChildren() {
+          try child.remove()
+        }
+
+        let blockNode = testCase.makeNode()
+        let textNode = TextNode()
+        try textNode.setText("Selected \(testCase.name)")
+        try blockNode.append([textNode])
+        try rootNode.append([blockNode])
+
+        let anchor = Point(key: textNode.key, offset: 0, type: .text)
+        let focus = Point(key: textNode.key, offset: textNode.getTextContentSize(), type: .text)
+        getActiveEditorState()?.selection = RangeSelection(anchor: anchor, focus: focus, format: TextFormat())
+
+        try getSelectionAssumingRangeSelection().deleteCharacter(isBackwards: true)
+
+        let firstChild = try XCTUnwrap(rootNode.getFirstChild() as? ElementNode, testCase.name)
+        XCTAssertEqual(type(of: firstChild).getType(), testCase.expectedType, testCase.name)
+        XCTAssertEqual(firstChild.getTextContent(), "\u{200B}", testCase.name)
+
+        let selection = getSelectionAssumingRangeSelection()
+        XCTAssertEqual(selection.anchor.type, .text, testCase.name)
+        XCTAssertEqual(selection.anchor.offset, 0, testCase.name)
+        XCTAssertEqual(try selection.anchor.getNode().getParent()?.key, firstChild.key, testCase.name)
+      }
+    }
+  }
+
+  func testConvertingQuoteToParagraphDoesNotPreserveQuoteIndent() throws {
+    let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
+    let editor = view.editor
+
+    try editor.update {
+      guard let rootNode = editor.getEditorState().nodeMap[kRootNodeKey] as? RootNode else {
+        XCTFail("Failed to get rootNode")
+        return
+      }
+
+      for child in rootNode.getChildren() {
+        try child.remove()
+      }
+
+      let quoteNode = QuoteNode()
+      let textNode = TextNode()
+      try textNode.setText("Quoted")
+      try quoteNode.append([textNode])
+      try rootNode.append([quoteNode])
+
+      let anchor = Point(key: textNode.key, offset: textNode.getTextContentSize(), type: .text)
+      getActiveEditorState()?.selection = RangeSelection(anchor: anchor, focus: anchor, format: TextFormat())
+      setBlocksType(selection: getSelectionAssumingRangeSelection()) { createParagraphNode() }
+
+      let paragraph = try XCTUnwrap(rootNode.getFirstChild() as? ParagraphNode)
+      XCTAssertEqual(paragraph.getTextContent(), "Quoted")
+      XCTAssertEqual(paragraph.getIndent(), 0)
+    }
+  }
+
+  func testDeletingBoundaryBeforeInvisibleOnlyParagraphDoesNotMergeAnchorIntoPreviousText() throws {
+    let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
+    let editor = view.editor
+
+    try editor.update {
+      guard let rootNode = editor.getEditorState().nodeMap[kRootNodeKey] as? RootNode else {
+        XCTFail("Failed to get rootNode")
+        return
+      }
+
+      for child in rootNode.getChildren() {
+        try child.remove()
+      }
+
+      let firstParagraph = createParagraphNode()
+      let firstText = TextNode(text: "Tail")
+      try firstParagraph.append([firstText])
+      let emptyParagraph = createParagraphNode()
+      let anchor = TextNode(text: "\u{200B}")
+      try emptyParagraph.append([anchor])
+      try rootNode.append([firstParagraph, emptyParagraph])
+
+      let start = Point(key: firstText.key, offset: firstText.getTextContentSize(), type: .text)
+      let end = Point(key: anchor.key, offset: 0, type: .text)
+      let selection = RangeSelection(anchor: start, focus: end, format: TextFormat())
+      getActiveEditorState()?.selection = selection
+
+      try selection.removeText()
+
+      XCTAssertEqual(rootNode.getTextContent(), "Tail")
+      XCTAssertFalse(rootNode.getTextContent().contains("\u{200B}"))
+      XCTAssertEqual((rootNode.getFirstChild() as? ParagraphNode)?.getTextContent(), "Tail")
+    }
+  }
+
   func testDeletingAtBeginningOfParagraphWithMultipleTextNodes() throws {
     let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
     let editor = view.editor

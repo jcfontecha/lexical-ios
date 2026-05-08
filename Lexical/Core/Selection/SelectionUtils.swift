@@ -180,8 +180,10 @@ func editorStateHasDirtySelection(pendingEditorState: EditorState, editor: Edito
 }
 
 func stringLocationForPoint(_ point: Point, editor: Editor) throws -> Int? {
-  let rangeCache = editor.rangeCache
+  return try stringLocationForPoint(point, rangeCache: editor.rangeCache)
+}
 
+func stringLocationForPoint(_ point: Point, rangeCache: [NodeKey: RangeCacheItem]) throws -> Int? {
   guard let rangeCacheItem = rangeCache[point.key] else { return nil }
 
   switch point.type {
@@ -212,6 +214,10 @@ func stringLocationForPoint(_ point: Point, editor: Editor) throws -> Int? {
 }
 
 public func createNativeSelection(from selection: RangeSelection, editor: Editor) throws -> NativeSelection {
+  return try createNativeSelection(from: selection, rangeCache: editor.rangeCache)
+}
+
+func createNativeSelection(from selection: RangeSelection, rangeCache: [NodeKey: RangeCacheItem]) throws -> NativeSelection {
   let isBefore = try selection.anchor.isBefore(point: selection.focus)
   var affinity: UITextStorageDirection = isBefore ? .forward : .backward
 
@@ -219,8 +225,8 @@ public func createNativeSelection(from selection: RangeSelection, editor: Editor
     affinity = .forward
   }
 
-  guard let anchorLocation = try stringLocationForPoint(selection.anchor, editor: editor),
-    let focusLocation = try stringLocationForPoint(selection.focus, editor: editor)
+  guard let anchorLocation = try stringLocationForPoint(selection.anchor, rangeCache: rangeCache),
+    let focusLocation = try stringLocationForPoint(selection.focus, rangeCache: rangeCache)
   else {
     return NativeSelection()
   }
@@ -554,7 +560,10 @@ public func setBlocksType(
 
     let targetElement = createElement()
     if let node = node as? ElementNode {
-      _ = try? targetElement.setIndent(node.getIndent())
+      let shouldPreserveIndent = !(node is QuoteNode && !(targetElement is QuoteNode))
+      if shouldPreserveIndent {
+        _ = try? targetElement.setIndent(node.getIndent())
+      }
     }
     _ = try? node.replace(replaceWith: targetElement, includeChildren: true)
   }

@@ -38,9 +38,20 @@ public class ListItemNode: ElementNode {
   
   // Helper method to check if list item is effectively empty (including zero-width space)
   public func isEffectivelyEmpty() -> Bool {
-    let textContent = self.getTextContent()
-    return textContent.isEmpty || textContent == "\u{200B}"
+    var visibleScalars = String.UnicodeScalarView()
+    for scalar in self.getTextContent().unicodeScalars where !Self.emptyListInvisibleScalarValues.contains(scalar.value) {
+      visibleScalars.append(scalar)
+    }
+    return String(visibleScalars).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
+
+  private static let emptyListInvisibleScalarValues: Set<UInt32> = [
+    0x200B, // zero-width space
+    0x200C, // zero-width non-joiner
+    0x200D, // zero-width joiner
+    0x2060, // word joiner
+    0xFEFF  // zero-width no-break space / BOM
+  ]
 
   override public class func getType() -> NodeType {
     .listItem
@@ -176,6 +187,14 @@ public class ListItemNode: ElementNode {
     // Check if current list item is effectively empty (only zero-width space or truly empty)
     if self.isEffectivelyEmpty() {
       let paragraph = createParagraphNode()
+      let seededAnchor: TextNode?
+      if self.getChildrenSize() == 0 {
+        let anchor = createTextNode(text: "\u{200B}")
+        try paragraph.append([anchor])
+        seededAnchor = anchor
+      } else {
+        seededAnchor = nil
+      }
       let list = try self.getParentOrThrow()
       
       // Replace the current empty list item with a paragraph
@@ -185,7 +204,11 @@ public class ListItemNode: ElementNode {
       if let listNode = list as? ListNode, listNode.getChildrenSize() == 0 {
         try listNode.remove()
       }
-      
+
+      if let seededAnchor {
+        let point = Point(key: seededAnchor.key, offset: 0, type: .text)
+        try setSelection(RangeSelection(anchor: point, focus: point, format: selection?.format ?? TextFormat()))
+      }
       return paragraph
     }
     
@@ -222,12 +245,16 @@ public class ListItemNode: ElementNode {
       return true
     }
 
+    if !anchorNode.getNextSiblings().isEmpty {
+      return false
+    }
+
     return selection.anchor.offset >= anchorNode.getTextContentSize()
   }
 
   override public func collapseAtStart(selection: RangeSelection) throws -> Bool {
     // Handle zero-width space case - treat as empty for deletion
-    if self.isEffectivelyEmpty() && self.getTextContent() == "\u{200B}" {
+    if self.isEffectivelyEmpty() && !self.getTextContent().isEmpty {
       // Remove all children to treat as empty list item
       let children = self.getChildren()
       for child in children {

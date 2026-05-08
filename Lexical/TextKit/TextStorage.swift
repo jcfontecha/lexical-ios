@@ -109,10 +109,13 @@ public class TextStorage: NSTextStorage {
           return
         }
         let updatedNativeSelection = try createNativeSelection(from: updatedSelection, editor: editor)
+        try frontend.updateNativeSelection(from: updatedSelection)
+        frontend.syncTypingAttributesFromCaret()
         frontend.interceptNextSelectionChangeAndReplaceWithRange = updatedNativeSelection.range
       }
 
       frontend.showPlaceholderText()
+      editor.dispatchCommand(type: .selectionChange)
     } catch {
       print("\(error)")
     }

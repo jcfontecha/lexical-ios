@@ -409,6 +409,7 @@ public class RangeSelection: BaseSelection {
           lastElement = try lastElement?.getParentOrThrow()
         } while lastElement?.isInline() ?? false
       }
+      let firstAndLastElementsAreEqual = firstElement == lastElement
 
       // Handle mutations to the last node.
       if (endPoint.type == .text && (endOffset != 0 || (lastNode?.getTextContent().lengthAsNSString() == 0))) || (endPoint.type == .element && lastNode?.getIndexWithinParent() ?? 0 < endOffset) {
@@ -438,6 +439,13 @@ public class RangeSelection: BaseSelection {
             try lastNode?.remove()
           }
         }
+      } else if let lastNodeAsTextNode = lastNode as? TextNode,
+        !firstAndLastElementsAreEqual,
+        endPoint.type == .text,
+        endOffset == 0,
+        isTextContentEmptyIgnoringEmptyInvisibles(lastNodeAsTextNode.getTextContent(), trim: false)
+      {
+        try lastNodeAsTextNode.remove()
       } else {
         if let lastNode {
           markedNodeKeysForKeep.insert(lastNode.key)
@@ -449,7 +457,6 @@ public class RangeSelection: BaseSelection {
       // is the same as the first parent, this logic also works.
       let lastNodeChildren = lastElement?.getChildren() ?? []
       let selectedNodesSet = Set(selectedNodes)
-      let firstAndLastElementsAreEqual = firstElement == lastElement
 
       // We choose a target to insert all nodes after. In the case of having
       // and inline starting parent element with a starting node that has no
@@ -976,6 +983,12 @@ public class RangeSelection: BaseSelection {
         isRootNode(node: anchorNode.getParent()),
         anchorNode.getIndexWithinParent() == 0
       {
+        if anchorNode is HeadingNode || anchorNode is QuoteNode || anchorNode is CodeNode {
+          let anchor = createTextNode(text: "\u{200B}")
+          try anchorNode.append([anchor])
+          try anchor.select(anchorOffset: 0, focusOffset: 0)
+          return
+        }
         try anchorNode.collapseAtStart(selection: self)
       }
     }

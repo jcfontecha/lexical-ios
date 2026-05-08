@@ -35,6 +35,8 @@ internal protocol Frontend: AnyObject {
   func unmarkTextWithoutUpdate()
   func presentDeveloperFacingError(message: String)
   func updateNativeSelection(from selection: BaseSelection) throws
+  func prepareForNativeSelectionDuringTextStorageEditing(_ nativeSelection: NativeSelection?)
+  func syncTypingAttributesFromCaret()
   func setMarkedTextFromReconciler(_ markedText: NSAttributedString, selectedRange: NSRange)
   func resetSelectedRange()
   func showPlaceholderText()

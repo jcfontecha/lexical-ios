@@ -84,6 +84,58 @@ class ReconcilerTests: XCTestCase {
     XCTAssertEqual(editor.textStorage?.string, "Hello everyone!")
   }
 
+  func testReplacingRichInlineDocumentWithEmptyParagraphDoesNotDoubleDeleteRanges() throws {
+    let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
+    let editor = view.editor
+
+    try editor.update {
+      guard let root = getRoot() else {
+        XCTFail("Missing root")
+        return
+      }
+
+      for child in root.getChildren() {
+        try child.remove()
+      }
+
+      let paragraph = createParagraphNode()
+      let bold = TextNode(text: "bold", key: nil)
+      try bold.setBold(true)
+      let normal1 = TextNode(text: " and ", key: nil)
+      let italic = TextNode(text: "italic", key: nil)
+      try italic.setItalic(true)
+      let normal2 = TextNode(text: " and ", key: nil)
+      let both = TextNode(text: "both", key: nil)
+      try both.setBold(true)
+      try both.setItalic(true)
+      let normal3 = TextNode(text: " and code", key: nil)
+      try paragraph.append([bold, normal1, italic, normal2, both, normal3])
+      try root.append([paragraph])
+      _ = try paragraph.selectEnd()
+    }
+
+    XCTAssertEqual(view.textStorage.string, "bold and italic and both and code")
+
+    try editor.update {
+      guard let root = getRoot() else {
+        XCTFail("Missing root")
+        return
+      }
+
+      for child in root.getChildren() {
+        try child.remove()
+      }
+
+      let paragraph = createParagraphNode()
+      let anchor = TextNode(text: "\u{200B}", key: nil)
+      try paragraph.append([anchor])
+      try root.append([paragraph])
+      _ = try anchor.select(anchorOffset: 0, focusOffset: 0)
+    }
+
+    XCTAssertEqual(view.textStorage.string, "\u{200B}")
+  }
+
   func testDidMarkParentNodesDirty() throws {
     let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
     let editor = view.editor

@@ -117,10 +117,8 @@ public class EditorHistory {
 
     externalHistoryState.current = historyStateEntry
     do {
-      if let editor = historyStateEntry.editor,
-        let undoSelection = historyStateEntry.undoSelection
-      {
-        try editor.setEditorState(historyStateEntry.editorState.clone(selection: undoSelection))
+      if let editor = historyStateEntry.editor {
+        try editor.setEditorState(historyStateEntry.editorState.clone(selection: historyStateEntry.undoSelection))
         historyStateEntry.editor = editor
         editor.dispatchCommand(type: .updatePlaceholderVisibility)
       }
@@ -300,7 +298,7 @@ func getChangeType(
   guard let nextSelection = nextEditorState.selection,
     let prevSelection = prevEditorState.selection
   else {
-    throw LexicalError.internal("Failed to find selection")
+    return .other
   }
 
   guard let nextSelection = nextSelection as? RangeSelection,

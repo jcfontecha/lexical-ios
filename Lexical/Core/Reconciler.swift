@@ -119,6 +119,21 @@ internal enum Reconciler {
 
     try reconcileNode(key: kRootNodeKey, reconcilerState: reconcilerState)
 
+    let pendingNativeSelectionDuringEditing: NativeSelection?
+    if markedTextOperation == nil,
+      let nextRangeSelection = nextSelection as? RangeSelection
+    {
+      pendingNativeSelectionDuringEditing = try? createNativeSelection(
+        from: nextRangeSelection,
+        rangeCache: reconcilerState.nextRangeCache)
+    } else {
+      pendingNativeSelectionDuringEditing = nil
+    }
+    editor.frontend?.prepareForNativeSelectionDuringTextStorageEditing(pendingNativeSelectionDuringEditing)
+    defer {
+      editor.frontend?.prepareForNativeSelectionDuringTextStorageEditing(nil)
+    }
+
     let previousMode = textStorage.mode
     textStorage.mode = .controllerMode
     textStorage.beginEditing()
@@ -126,7 +141,7 @@ internal enum Reconciler {
     editor.log(.reconciler, .verbose, "about to do rangesToDelete: total \(reconcilerState.rangesToDelete.count)")
     var nonEmptyDeletionsCount = 0
 
-    for deletionRange in reconcilerState.rangesToDelete.reversed() {
+    for deletionRange in normalizedDeletionRanges(reconcilerState.rangesToDelete) {
       if deletionRange.length > 0 {
         nonEmptyDeletionsCount += 1
         editor.log(.reconciler, .verboseIncludingUserContent, "deleting range \(NSStringFromRange(deletionRange)) `\((textStorage.string as NSString).substring(with: deletionRange))`")
@@ -237,6 +252,10 @@ internal enum Reconciler {
 
     editor.rangeCache = reconcilerState.nextRangeCache
     textStorage.endEditing()
+    if let nextSelection = reconcilerState.nextEditorState.selection as? RangeSelection {
+      try? editor.frontend?.updateNativeSelection(from: nextSelection)
+    }
+    editor.frontend?.syncTypingAttributesFromCaret()
     textStorage.mode = previousMode
 
     if let markedTextOperation,
@@ -270,6 +289,38 @@ internal enum Reconciler {
     if shouldReconcileSelection && (needsUpdate || nextSelection == nil || selectionsAreDifferent) {
       try reconcileSelection(prevSelection: currentSelection, nextSelection: nextSelection, editor: editor)
     }
+  }
+
+  private static func normalizedDeletionRanges(_ ranges: [NSRange]) -> [NSRange] {
+    let sortedRanges = ranges
+      .filter { $0.length > 0 }
+      .sorted {
+        if $0.location == $1.location {
+          return $0.length < $1.length
+        }
+        return $0.location < $1.location
+      }
+
+    var mergedRanges: [NSRange] = []
+    for range in sortedRanges {
+      guard let last = mergedRanges.last else {
+        mergedRanges.append(range)
+        continue
+      }
+
+      let lastUpperBound = last.location + last.length
+      let rangeUpperBound = range.location + range.length
+      if range.location <= lastUpperBound {
+        mergedRanges[mergedRanges.count - 1] = NSRange(
+          location: last.location,
+          length: max(lastUpperBound, rangeUpperBound) - last.location
+        )
+      } else {
+        mergedRanges.append(range)
+      }
+    }
+
+    return mergedRanges.reversed()
   }
 
   private static func reconcileNode(key: NodeKey, reconcilerState: ReconcilerState) throws {

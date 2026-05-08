@@ -202,6 +202,14 @@ public extension LexicalViewDelegate {
     try textView.updateNativeSelection(from: selection)
   }
 
+  func prepareForNativeSelectionDuringTextStorageEditing(_ nativeSelection: NativeSelection?) {
+    textView.prepareForNativeSelectionDuringTextStorageEditing(nativeSelection)
+  }
+
+  func syncTypingAttributesFromCaret() {
+    textView.syncTypingAttributesFromCaret()
+  }
+
   func setMarkedTextFromReconciler(_ markedText: NSAttributedString, selectedRange: NSRange) {
     textView.setMarkedTextFromReconciler(markedText, selectedRange: selectedRange)
   }

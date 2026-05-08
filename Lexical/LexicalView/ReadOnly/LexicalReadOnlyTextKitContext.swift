@@ -267,6 +267,14 @@ internal class LexicalReadOnlySizeCache {
     // no-op
   }
 
+  func prepareForNativeSelectionDuringTextStorageEditing(_ nativeSelection: NativeSelection?) {
+    // no-op
+  }
+
+  func syncTypingAttributesFromCaret() {
+    // no-op
+  }
+
   func setMarkedTextFromReconciler(_ markedText: NSAttributedString, selectedRange: NSRange) {
     // no-op
   }
