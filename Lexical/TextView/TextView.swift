@@ -671,12 +671,37 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
     }
 
     let targetOffset = min(max(cursorLocation, 0), textStorage.length)
-    let lineStart = lineStartLocation(containing: targetOffset, text: text)
-    guard targetOffset > lineStart else {
+
+    // Find the start of the *visual* line containing the caret. A paragraph
+    // can wrap into multiple visual lines without any hard line-break
+    // character; if we measure the prefix from the paragraph's hard line
+    // start, the caret on the second visual line is offset by the full
+    // first-line width and lands off-screen. Ask TextKit for the actual
+    // line fragment instead.
+    var visualLineStart = lineStartLocation(containing: targetOffset, text: text)
+    if textStorage.length > 0, glyphIndex >= 0, glyphIndex < layoutManager.numberOfGlyphs {
+      var lineFragmentGlyphRange = NSRange(location: 0, length: 0)
+      _ = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineFragmentGlyphRange)
+      if lineFragmentGlyphRange.length > 0 {
+        let lineCharacterRange = layoutManager.characterRange(forGlyphRange: lineFragmentGlyphRange, actualGlyphRange: nil)
+        // Prefer the deeper of the two — the visual line start sits inside
+        // (or equal to) the hard line start, never before it.
+        visualLineStart = max(visualLineStart, lineCharacterRange.location)
+      }
+    }
+
+    guard targetOffset > visualLineStart else {
+      // Caret sits at the visual line start. Use the line fragment's own x
+      // origin (handles trailing-soft-wrap geometry correctly) and fall back
+      // to lineStartX if unavailable.
+      if glyphIndex >= 0, glyphIndex < layoutManager.numberOfGlyphs {
+        let lineFragment = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        return textContainerInset.left + lineFragment.origin.x + textContainer.lineFragmentPadding
+      }
       return lineStartX
     }
 
-    let characterRange = NSRange(location: lineStart, length: targetOffset - lineStart)
+    let characterRange = NSRange(location: visualLineStart, length: targetOffset - visualLineStart)
     if characterRange.length > 0 {
       let linePrefix = textStorage.attributedSubstring(from: characterRange)
       let measuredWidth = linePrefix.boundingRect(
@@ -684,7 +709,16 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
         options: [.usesLineFragmentOrigin, .usesFontLeading],
         context: nil
       ).width
-      let computedX = lineStartX + measuredWidth
+      // Anchor on the line fragment's actual x origin when available, so we
+      // pick up wrapped-line indents/insets correctly.
+      let visualLineOriginX: CGFloat
+      if glyphIndex >= 0, glyphIndex < layoutManager.numberOfGlyphs {
+        let lineFragment = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        visualLineOriginX = textContainerInset.left + lineFragment.origin.x + textContainer.lineFragmentPadding
+      } else {
+        visualLineOriginX = lineStartX
+      }
+      let computedX = visualLineOriginX + measuredWidth
       if computedX.isFinite {
         return computedX
       }
