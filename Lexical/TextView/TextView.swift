@@ -629,8 +629,20 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   }
 
   private static func lineAdvance(atCharacterLocation characterLocation: Int, textStorage: NSTextStorage) -> CGFloat {
+    // Vertical advance per laid-out line, matching how TextKit positions the
+    // next line fragment. TextKit places each fragment at the previous
+    // fragment's used origin + lineHeight + lineSpacing (always) + paragraphSpacing
+    // (when crossing a paragraph boundary). The previous version of this
+    // method omitted lineSpacing, so the fallback caret math disagreed with
+    // the rendered TextKit position by `lineSpacing` per intervening line.
+    // When the caret rect for an empty/anchored block switched between the
+    // TextKit usedRect path and this fallback path (e.g. as ZWSP anchors
+    // were inserted/elided between successive Enter presses), the caret
+    // appeared to jump up or down by N * lineSpacing — perceived as a
+    // glitchy cursor on Enter.
     let paragraphStyle = textStorage.attribute(.paragraphStyle, at: characterLocation, effectiveRange: nil) as? NSParagraphStyle
     return lineHeight(atCharacterLocation: characterLocation, textStorage: textStorage)
+      + (paragraphStyle?.lineSpacing ?? 0)
       + (paragraphStyle?.paragraphSpacing ?? 0)
   }
 
