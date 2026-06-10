@@ -12,45 +12,31 @@ For changes between versions, see the [Lexical iOS Changelog](https://github.com
 
 ## Fork Divergence (Public)
 
-This repository tracks `facebook/lexical-ios` and is intentionally diverged for list rendering and cursor/placeholder behavior.
+This is a **hard fork** of `facebook/lexical-ios`. It no longer tracks upstream: the `upstream` remote is kept for reference only, there is no rebase-friendliness guarantee, and divergent files are restructured freely. It exists to serve the [MarkdownEditor](https://github.com/jcfontecha) package, which pins this fork by exact version tag.
 
-As of 2026-02-25:
+### What diverges, and why
 
-- `upstream/main` is included via the `upstream` remote.
-- This branch is `7` commits ahead of `upstream/main` and `0` commits behind.
-- Upstream hotfixes from `main` are included (including event switch hardening, nil-coalescing cleanup, and iOS 17 deprecation annotations).
+**Caret geometry (`TextView.swift`, +~395 lines).** `caretRect(for:)` is reimplemented on font metrics instead of UIKit's default: `fontMetricsCaretRect` centers the caret on the glyph cap-height of the *visual* line (TextKit pads `usedLineFragmentRect` downward by `lineSpacing`, pushing `midY` below the visible center), `caretX` resolves the visual-line start via `lineFragmentRect` so soft-wrapped lines position correctly with `headIndent`/`firstLineHeadIndent`, and the no-glyph fallback includes `lineSpacing` in its line advance. A `TextViewCursorDelegate` protocol allows host-side overrides. This machinery is TextKit 1 (`NSLayoutManager`) by construction.
 
-Current fork-only changes are in:
+**Reconciler & selection (`Reconciler.swift`, `SelectionUtils.swift`, `FrontendProtocol.swift`, `RangeSelection.swift`).** From the canonical-state work:
 
-- `Lexical/Core/Events.swift`
-- `Lexical/Core/TextUtils.swift`
-- `Lexical/Helper/AttributesUtils.swift`
-- `Lexical/Helper/NSAttributedStringKey+Extensions.swift`
-- `Lexical/Helper/Theme.swift`
-- `Lexical/LexicalView/LexicalView.swift`
-- `Lexical/TextView/TextView.swift`
-- `Plugins/LexicalListPlugin/LexicalListPlugin/ListItemNode.swift`
-- `Plugins/LexicalListPlugin/LexicalListPlugin/ListPlugin.swift`
-- `Plugins/LexicalListPlugin/LexicalListPlugin/ListStyleEvents.swift`
+- `Reconciler.normalizedDeletionRanges(_:)` merges overlapping `rangesToDelete` before they are applied to TextStorage.
+- `FrontendProtocol.prepareForNativeSelectionDuringTextStorageEditing(_:)` (implemented by `TextView`, `LexicalView`, and the read-only TextKit context) pre-stages the post-edit native selection so UIKit never observes a stale caret mid-reconcile.
+- `SelectionUtils.createNativeSelection(from:rangeCache:)` takes an explicit range cache so native selections can be built from the reconciler's in-progress state.
+- `RangeSelection.deleteCharacter` re-anchors first-block headings/quotes/code on a caret anchor, and `removeText` uses invisible-aware emptiness checks.
+- `EditorHistoryPlugin/History.swift` coalescing adjustments.
 
-### Why these diffs exist
+**Caret-anchor (ZWSP) invariant (`TextUtils.swift`, `ListItemNode.swift`, `ListStyleEvents.swift`, `RangeSelection.swift`).** Empty list items (and some converted blocks) are seeded with a zero-width-space text node so the caret has a text anchor and bullets render. The canonical API lives in `TextUtils.swift` and is public — `emptyTextCaretAnchor`, `emptyTextInvisibleScalarValues`, `textContentRemovingEmptyInvisibles(_:)`, `isTextContentEmptyIgnoringEmptyInvisibles(_:trim:)`, `emptyTextInvisibleScalarCount(in:)` — and is the **single source of truth** for "visibly empty" decisions in the fork and in consumers. `ListItemNode.isEffectivelyEmpty()` and `insertNewAfter` use it; `insertNewAfter` also avoids leaking the anchor into split paragraphs. Tradeoff: synthetic content exists in the node tree and every emptiness/offset decision must go through these helpers.
 
-1. Better list UX and appearance control (`Theme.swift`, `ListItemNode.swift`, `ListPlugin.swift`, `ListStyleEvents.swift`).
-2. Placeholder behavior that updates after insert and supports empty single-heading documents (`TextUtils.swift`, `Events.swift`).
-3. Cursor rendering options (`TextView.swift`, `LexicalView.swift`, `Theme.swift`).
+**List styling & theme extension points (`Theme.swift`, `ListPlugin.swift`, `ListItemNode.swift`, `NSAttributedStringKey+Extensions.swift`, `AttributesUtils.swift`).** `indentSize`, `listBulletMargin`, `listBulletTextSpacing`, `listSpacing`, bullet size/weight/vertical-offset attributes.
 
-### Minor shortcuts kept (and what they enable)
+**Code block drawing (`CodeNode.swift`).** `CodeBlockCustomDrawingAttributes` gains `cornerRadius` and `horizontalInset` for rounded, inset code-block backgrounds.
 
-- Zero-width-space insertion for empty list items.
-  - Enables reliable bullet rendering in custom-drawing paths for otherwise-empty list nodes.
-  - Tradeoff: synthetic empty-text content is introduced and must be kept in sync with list lifecycle transitions.
+**Placeholder behavior (`Events.swift`, `TextUtils.swift`, `LexicalView.swift`).** Placeholder refresh after insert; placeholders allowed on a single empty heading (start-with-title UX).
 
-- Hardcoded cursor-adjustment parameters inside `caretRect(for:)`.
-  - Enables quick per-block visual tuning to avoid excessive visual height from spacing.
-  - Tradeoff: behavior is not yet configurable through public `Theme` values.
+**Plus:** `CodeHighlightPlugin` and `StatePersistencePlugin` additions, `LinkPlugin` adjustments, and the Swift package declaring macOS 10.15 so `LexicalHTML` can depend on SwiftSoup.
 
-- Theme-driven list spacing extension points were added for pragmatic styling control.
-  - Enables quick UX iteration for list margins/indenting without changing core layout algorithms.
+Full file list: `git diff --stat upstream/main HEAD -- Lexical Plugins`.
 
 ## Playground
 
