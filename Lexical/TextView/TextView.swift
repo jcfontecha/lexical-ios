@@ -42,6 +42,9 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   internal var interceptNextSelectionChangeAndReplaceWithRange: NSRange?
   internal var nativeSelectionUpdateRecorder: ((NSRange) -> Void)?
   private var pendingNativeSelectionDuringTextStorageEditing: NSRange?
+  internal var hasPendingNativeSelectionDuringTextStorageEditing: Bool {
+    pendingNativeSelectionDuringTextStorageEditing != nil
+  }
   weak var lexicalDelegate: LexicalTextViewDelegate?
   @objc public weak var cursorDelegate: TextViewCursorDelegate?
   private var placeholderLabel: UILabel
@@ -784,6 +787,16 @@ private class TextViewDelegate: NSObject, UITextViewDelegate {
     guard let textView = textView as? TextView else { return }
 
     if textView.isUpdatingNativeSelection {
+      return
+    }
+
+    // While the reconciler is applying text storage edits, UIKit adjusts the
+    // native selection to ranges that predate the pending editor state. Feeding
+    // those back through onSelectionChange rewrites the pending selection via
+    // the stale range cache (dead node keys → commit invariant violation). The
+    // reconciler establishes the canonical native selection itself at the end.
+    // (Marked-text reconciles pass no pending selection and are not gated.)
+    if textView.hasPendingNativeSelectionDuringTextStorageEditing {
       return
     }
 
