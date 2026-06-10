@@ -38,20 +38,8 @@ public class ListItemNode: ElementNode {
   
   // Helper method to check if list item is effectively empty (including zero-width space)
   public func isEffectivelyEmpty() -> Bool {
-    var visibleScalars = String.UnicodeScalarView()
-    for scalar in self.getTextContent().unicodeScalars where !Self.emptyListInvisibleScalarValues.contains(scalar.value) {
-      visibleScalars.append(scalar)
-    }
-    return String(visibleScalars).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    isTextContentEmptyIgnoringEmptyInvisibles(getTextContent())
   }
-
-  private static let emptyListInvisibleScalarValues: Set<UInt32> = [
-    0x200B, // zero-width space
-    0x200C, // zero-width non-joiner
-    0x200D, // zero-width joiner
-    0x2060, // word joiner
-    0xFEFF  // zero-width no-break space / BOM
-  ]
 
   override public class func getType() -> NodeType {
     .listItem
@@ -189,7 +177,7 @@ public class ListItemNode: ElementNode {
       let paragraph = createParagraphNode()
       let seededAnchor: TextNode?
       if self.getChildrenSize() == 0 {
-        let anchor = createTextNode(text: "\u{200B}")
+        let anchor = createTextNode(text: emptyTextCaretAnchor)
         try paragraph.append([anchor])
         seededAnchor = anchor
       } else {
@@ -226,7 +214,7 @@ public class ListItemNode: ElementNode {
       // content into this new item after insertNewAfter returns; seeding ZWSP here
       // would leak an invisible character into the split item.
       if shouldSeedZeroWidthSpaceAfterParagraphInsertion(selection: selection) {
-        let invisibleText = createTextNode(text: "\u{200B}")
+        let invisibleText = createTextNode(text: emptyTextCaretAnchor)
         try newElement.append([invisibleText])
       }
     }

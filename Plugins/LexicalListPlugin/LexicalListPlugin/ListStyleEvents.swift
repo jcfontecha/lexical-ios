@@ -52,7 +52,7 @@ private func createListOrMerge(node: ElementNode, listType: ListType) throws -> 
   
   // Ensure empty list items have content to trigger bullet rendering
   if listItem.getChildrenSize() == 0 {
-    let textNode = createTextNode(text: "\u{200B}") // Zero-width space
+    let textNode = createTextNode(text: emptyTextCaretAnchor)
     try listItem.append([textNode])
   }
 
@@ -164,7 +164,7 @@ public func insertList(editor: Editor, listType: ListType) throws {
         try list.append([listItem])
         // Ensure empty list items have content to trigger bullet rendering
         if listItem.getChildrenSize() == 0 {
-          let textNode = createTextNode(text: "\u{200B}") // Zero-width space
+          let textNode = createTextNode(text: emptyTextCaretAnchor)
           try listItem.append([textNode])
         }
       } else if let anchorNode = anchorNode as? ListItemNode {

@@ -24,7 +24,8 @@ private func rootTextContentRemovingEmptyInvisibles() -> String {
   textContentRemovingEmptyInvisibles(rootTextContent())
 }
 
-internal func textContentRemovingEmptyInvisibles(_ textContent: String) -> String {
+/// Removes every scalar in `emptyTextInvisibleScalarValues` from the text.
+public func textContentRemovingEmptyInvisibles(_ textContent: String) -> String {
   var text = String.UnicodeScalarView()
   for scalar in textContent.unicodeScalars where !emptyTextInvisibleScalarValues.contains(scalar.value) {
     text.append(scalar)
@@ -32,7 +33,8 @@ internal func textContentRemovingEmptyInvisibles(_ textContent: String) -> Strin
   return String(text)
 }
 
-internal func isTextContentEmptyIgnoringEmptyInvisibles(_ textContent: String, trim: Bool = true) -> Bool {
+/// Whether the text is empty once caret-anchor invisibles (and, with `trim`, whitespace) are ignored.
+public func isTextContentEmptyIgnoringEmptyInvisibles(_ textContent: String, trim: Bool = true) -> Bool {
   var text = textContentRemovingEmptyInvisibles(textContent)
   if trim {
     text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -40,7 +42,23 @@ internal func isTextContentEmptyIgnoringEmptyInvisibles(_ textContent: String, t
   return text.isEmpty
 }
 
-private let emptyTextInvisibleScalarValues: Set<UInt32> = [
+/// Number of scalars in the text that belong to `emptyTextInvisibleScalarValues`.
+public func emptyTextInvisibleScalarCount(in textContent: String) -> Int {
+  textContent.unicodeScalars.reduce(0) { count, scalar in
+    count + (emptyTextInvisibleScalarValues.contains(scalar.value) ? 1 : 0)
+  }
+}
+
+/// The canonical caret-anchor string seeded into otherwise-empty blocks (list items,
+/// freshly converted headings) so the caret has a text anchor and decorations render.
+/// Anything that decides "is this block visibly empty?" must ignore it — use the
+/// helpers above rather than comparing against this constant directly.
+public let emptyTextCaretAnchor = "\u{200B}"
+
+/// Scalars treated as invisible when deciding whether text content is "visibly empty".
+/// The canonical anchor is U+200B; the rest are joiner/BOM characters that can leak
+/// in via paste or IME and must never count as user-visible content.
+public let emptyTextInvisibleScalarValues: Set<UInt32> = [
   0x200B, // zero-width space
   0x200C, // zero-width non-joiner
   0x200D, // zero-width joiner

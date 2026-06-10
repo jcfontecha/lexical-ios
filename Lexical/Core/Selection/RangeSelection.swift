@@ -984,7 +984,7 @@ public class RangeSelection: BaseSelection {
         anchorNode.getIndexWithinParent() == 0
       {
         if anchorNode is HeadingNode || anchorNode is QuoteNode || anchorNode is CodeNode {
-          let anchor = createTextNode(text: "\u{200B}")
+          let anchor = createTextNode(text: emptyTextCaretAnchor)
           try anchorNode.append([anchor])
           try anchor.select(anchorOffset: 0, focusOffset: 0)
           return
