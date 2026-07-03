@@ -34,6 +34,8 @@ This is a **hard fork** of `facebook/lexical-ios`. It no longer tracks upstream:
 
 **Placeholder behavior (`Events.swift`, `TextUtils.swift`, `LexicalView.swift`).** Placeholder refresh after insert; placeholders allowed on a single empty heading (start-with-title UX).
 
+**Command listener ordering (`Editor.swift`, `Updates.swift`).** Listeners registered at the same `CommandPriority` fire in registration order; priority tiers still dispatch Critical -> High -> Normal -> Low -> Editor.
+
 **Plus:** `CodeHighlightPlugin` and `StatePersistencePlugin` additions, `LinkPlugin` adjustments, and the Swift package declaring macOS 10.15 so `LexicalHTML` can depend on SwiftSoup.
 
 Full file list: `git diff --stat upstream/main HEAD -- Lexical Plugins`.

@@ -205,6 +205,52 @@ class UpdatesTests: XCTestCase {
     XCTAssertTrue(validCommandTypeCount == 1)
   }
 
+  func testCommandListenersAtSamePriorityFireInRegistrationOrderAndCanBeRemoved() throws {
+    let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
+    let editor = view.editor
+
+    try editor.update {
+      createExampleNodeTree()
+    }
+
+    let commandType = CommandType(rawValue: "samePriorityRegistrationOrder")
+    var invocationOrder: [Int] = []
+
+    _ = editor.registerCommand(
+      type: commandType,
+      listener: { payload in
+        invocationOrder.append(1)
+        return false
+      },
+      priority: CommandPriority.High
+    )
+    let removeSecond = editor.registerCommand(
+      type: commandType,
+      listener: { payload in
+        invocationOrder.append(2)
+        return false
+      },
+      priority: CommandPriority.High
+    )
+    _ = editor.registerCommand(
+      type: commandType,
+      listener: { payload in
+        invocationOrder.append(3)
+        return false
+      },
+      priority: CommandPriority.High
+    )
+
+    XCTAssertFalse(editor.dispatchCommand(type: commandType, payload: nil))
+    XCTAssertEqual(invocationOrder, [1, 2, 3])
+
+    removeSecond()
+    invocationOrder = []
+
+    XCTAssertFalse(editor.dispatchCommand(type: commandType, payload: nil))
+    XCTAssertEqual(invocationOrder, [1, 3])
+  }
+
   func testCommandListenersFiredInPriorityOrder() throws {
     let view = LexicalView(editorConfig: EditorConfig(theme: Theme(), plugins: []), featureFlags: FeatureFlags())
     let editor = view.editor

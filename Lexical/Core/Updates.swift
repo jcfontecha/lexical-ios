@@ -73,13 +73,13 @@ public func triggerCommandListeners(activeEditor: Editor, type: CommandType, pay
       CommandPriority.Low,
       CommandPriority.Editor,
     ] {
-      guard let listeners = listenersInPriorityOrder?[priority]?.values else {
+      guard let listeners = listenersInPriorityOrder?[priority] else {
         continue
       }
 
       // TODO: handle throws
-      for wrapper in listeners {
-        let listener = wrapper.listener
+      for entry in listeners {
+        let listener = entry.metadata.listener
         if listener(payload) {
           handled = true
           return
@@ -90,8 +90,8 @@ public func triggerCommandListeners(activeEditor: Editor, type: CommandType, pay
 
   var shouldWrapInUpdateBlock = false
   for p in (listenersInPriorityOrder ?? [:]).values {
-    for metadata in p.values {
-      if metadata.shouldWrapInUpdateBlock {
+    for entry in p {
+      if entry.metadata.shouldWrapInUpdateBlock {
         shouldWrapInUpdateBlock = true
       }
     }

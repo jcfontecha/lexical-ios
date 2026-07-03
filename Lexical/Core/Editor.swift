@@ -272,11 +272,11 @@ public class Editor: NSObject {
     if self.commands[type] == nil {
       self.commands.updateValue(
         [
-          CommandPriority.Editor: [:],
-          CommandPriority.Low: [:],
-          CommandPriority.Normal: [:],
-          CommandPriority.High: [:],
-          CommandPriority.Critical: [:],
+          CommandPriority.Editor: [],
+          CommandPriority.Low: [],
+          CommandPriority.Normal: [],
+          CommandPriority.High: [],
+          CommandPriority.Critical: [],
         ],
         forKey: type
       )
@@ -284,12 +284,12 @@ public class Editor: NSObject {
 
     let wrapper = CommandListenerWithMetadata(listener: listener, shouldWrapInUpdateBlock: shouldWrapInUpdateBlock)
 
-    self.commands[type]?[priority]?[uuid] = wrapper
+    self.commands[type]?[priority]?.append(CommandListenerEntry(token: uuid, metadata: wrapper))
 
     return { [weak self] in
       guard let self else { return }
 
-      self.commands[type]?[priority]?.removeValue(forKey: uuid)
+      self.commands[type]?[priority]?.removeAll { $0.token == uuid }
     }
   }
 
