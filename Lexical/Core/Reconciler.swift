@@ -223,7 +223,13 @@ internal enum Reconciler {
 
     // BLOCK LEVEL ATTRIBUTES
 
-    let lastDescendentAttributes = getRoot()?.getLastChild()?.getAttributedStringAttributes(theme: editor.getTheme())
+    let lastDescendentAttributes = getRoot()?.getLastChild().map {
+      AttributeUtils.attributedStringStyles(
+        from: $0,
+        state: pendingEditorState,
+        theme: editor.getTheme()
+      )
+    }
 
     // TODO: this iteration applies the attributes in an arbitrary order. If we are to handle nesting nodes with these block level attributes
     // we may want to apply them in a deterministic order, and also make them nest additively (i.e. for when two blocks start at the same paragraph)

@@ -262,7 +262,7 @@ enum AttributeUtils {
       spacingInternal = extraLineFragmentAttributes[.paragraphSpacing_internal] as? CGFloat
     case .range(let nonEnclosing, _):
       lastParaStyle = textStorage.attribute(.paragraphStyle, at: nonEnclosing.location, effectiveRange: nil) as? NSParagraphStyle ?? NSParagraphStyle()
-      spacingInternal = textStorage.attribute(.paragraphSpacingBefore_internal, at: nonEnclosing.location, effectiveRange: nil) as? CGFloat
+      spacingInternal = textStorage.attribute(.paragraphSpacing_internal, at: nonEnclosing.location, effectiveRange: nil) as? CGFloat
     }
 
     guard let lastMutableParaStyle = lastParaStyle.mutableCopy() as? NSMutableParagraphStyle else {

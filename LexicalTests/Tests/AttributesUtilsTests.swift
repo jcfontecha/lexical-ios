@@ -280,6 +280,181 @@ class AttributesUtilsTests: XCTestCase {
     return theme
   }
 
+  func testBlockLevelAttributesPreserveAsymmetricBaseParagraphSpacing() throws {
+    let baseSpacingBefore: CGFloat = 5
+    let baseSpacingAfter: CGFloat = 17
+    let blockAttributes = BlockLevelAttributes(
+      marginTop: 2,
+      marginBottom: 7,
+      paddingTop: 3,
+      paddingBottom: 4
+    )
+    let expectedSpacingBefore = baseSpacingBefore + 5
+    let expectedSpacingAfter = baseSpacingAfter + 11
+
+    func makeTheme() -> Theme {
+      let theme = Theme()
+      theme.code = [
+        .paragraphSpacingBefore: baseSpacingBefore,
+        .paragraphSpacing: baseSpacingAfter,
+      ]
+      theme.setBlockLevelAttributes(.code, value: blockAttributes)
+      return theme
+    }
+
+    func makeView(lines: [String], trailingNewline: Bool, followedByParagraph: Bool) throws -> (LexicalView, NodeKey) {
+      let view = LexicalView(
+        editorConfig: EditorConfig(theme: makeTheme(), plugins: []),
+        featureFlags: FeatureFlags()
+      )
+      var codeNodeKey = ""
+
+      try view.editor.update {
+        guard let rootNode = getRoot() else {
+          XCTFail("should have root node")
+          return
+        }
+
+        try rootNode.getChildren().forEach { try $0.remove() }
+
+        let codeNode = CodeNode()
+        codeNodeKey = codeNode.key
+        for (index, line) in lines.enumerated() {
+          if index > 0 {
+            try codeNode.append([LineBreakNode()])
+          }
+          try codeNode.append([TextNode(text: line)])
+        }
+        if trailingNewline {
+          try codeNode.append([LineBreakNode()])
+        }
+        try rootNode.append([codeNode])
+
+        if followedByParagraph {
+          let paragraphNode = ParagraphNode()
+          try paragraphNode.append([TextNode(text: "after")])
+          try rootNode.append([paragraphNode])
+        }
+      }
+
+      return (view, codeNodeKey)
+    }
+
+    func reapplyBlockAttributes(in view: LexicalView, codeNodeKey: NodeKey) throws {
+      try view.editor.update {
+        guard let codeNode: CodeNode = getNodeByKey(key: codeNodeKey) else {
+          XCTFail("should have code node")
+          return
+        }
+        try codeNode.setLanguage(codeNode.getLanguage())
+      }
+    }
+
+    func clearBlockAttributes(in view: LexicalView, codeNodeKey: NodeKey) throws {
+      view.editor.getTheme().setBlockLevelAttributes(
+        .code,
+        value: BlockLevelAttributes(
+          marginTop: 0,
+          marginBottom: 0,
+          paddingTop: 0,
+          paddingBottom: 0
+        )
+      )
+      try reapplyBlockAttributes(in: view, codeNodeKey: codeNodeKey)
+    }
+
+    func paragraphStyle(in view: LexicalView, at location: Int) throws -> NSParagraphStyle {
+      guard let attributedText = view.textView.attributedText,
+        let style = attributedText.attribute(
+          .paragraphStyle,
+          at: location,
+          effectiveRange: nil
+        ) as? NSParagraphStyle
+      else {
+        throw LexicalError.internal("Expected paragraph style at \(location)")
+      }
+      return style
+    }
+
+    let (singleView, singleCodeNodeKey) = try makeView(
+      lines: ["single"],
+      trailingNewline: false,
+      followedByParagraph: true
+    )
+    var singleStyle = try paragraphStyle(in: singleView, at: 0)
+    XCTAssertEqual(singleStyle.paragraphSpacingBefore, expectedSpacingBefore)
+    XCTAssertEqual(singleStyle.paragraphSpacing, expectedSpacingAfter)
+
+    try reapplyBlockAttributes(in: singleView, codeNodeKey: singleCodeNodeKey)
+    singleStyle = try paragraphStyle(in: singleView, at: 0)
+    XCTAssertEqual(singleStyle.paragraphSpacingBefore, expectedSpacingBefore)
+    XCTAssertEqual(singleStyle.paragraphSpacing, expectedSpacingAfter)
+
+    try clearBlockAttributes(in: singleView, codeNodeKey: singleCodeNodeKey)
+    singleStyle = try paragraphStyle(in: singleView, at: 0)
+    XCTAssertEqual(singleStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(singleStyle.paragraphSpacing, baseSpacingAfter)
+
+    let (multiView, multiCodeNodeKey) = try makeView(
+      lines: ["first", "second"],
+      trailingNewline: false,
+      followedByParagraph: true
+    )
+    var firstStyle = try paragraphStyle(in: multiView, at: 0)
+    var lastStyle = try paragraphStyle(in: multiView, at: 6)
+    XCTAssertEqual(firstStyle.paragraphSpacingBefore, expectedSpacingBefore)
+    XCTAssertEqual(firstStyle.paragraphSpacing, baseSpacingAfter)
+    XCTAssertEqual(lastStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(lastStyle.paragraphSpacing, expectedSpacingAfter)
+
+    try reapplyBlockAttributes(in: multiView, codeNodeKey: multiCodeNodeKey)
+    firstStyle = try paragraphStyle(in: multiView, at: 0)
+    lastStyle = try paragraphStyle(in: multiView, at: 6)
+    XCTAssertEqual(firstStyle.paragraphSpacingBefore, expectedSpacingBefore)
+    XCTAssertEqual(firstStyle.paragraphSpacing, baseSpacingAfter)
+    XCTAssertEqual(lastStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(lastStyle.paragraphSpacing, expectedSpacingAfter)
+
+    try clearBlockAttributes(in: multiView, codeNodeKey: multiCodeNodeKey)
+    firstStyle = try paragraphStyle(in: multiView, at: 0)
+    lastStyle = try paragraphStyle(in: multiView, at: 6)
+    XCTAssertEqual(firstStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(firstStyle.paragraphSpacing, baseSpacingAfter)
+    XCTAssertEqual(lastStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(lastStyle.paragraphSpacing, baseSpacingAfter)
+
+    let (trailingView, trailingCodeNodeKey) = try makeView(
+      lines: ["first", "second"],
+      trailingNewline: true,
+      followedByParagraph: false
+    )
+    firstStyle = try paragraphStyle(in: trailingView, at: 0)
+    XCTAssertEqual(firstStyle.paragraphSpacingBefore, expectedSpacingBefore)
+    guard var extraLineStyle = trailingView.textStorage.extraLineFragmentAttributes?[.paragraphStyle] as? NSParagraphStyle else {
+      XCTFail("Expected extra-line-fragment paragraph style")
+      return
+    }
+    XCTAssertEqual(extraLineStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(extraLineStyle.paragraphSpacing, expectedSpacingAfter)
+
+    try reapplyBlockAttributes(in: trailingView, codeNodeKey: trailingCodeNodeKey)
+    extraLineStyle = try XCTUnwrap(
+      trailingView.textStorage.extraLineFragmentAttributes?[.paragraphStyle] as? NSParagraphStyle
+    )
+    XCTAssertEqual(extraLineStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(extraLineStyle.paragraphSpacing, expectedSpacingAfter)
+
+    try clearBlockAttributes(in: trailingView, codeNodeKey: trailingCodeNodeKey)
+    firstStyle = try paragraphStyle(in: trailingView, at: 0)
+    extraLineStyle = try XCTUnwrap(
+      trailingView.textStorage.extraLineFragmentAttributes?[.paragraphStyle] as? NSParagraphStyle
+    )
+    XCTAssertEqual(firstStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(firstStyle.paragraphSpacing, baseSpacingAfter)
+    XCTAssertEqual(extraLineStyle.paragraphSpacingBefore, baseSpacingBefore)
+    XCTAssertEqual(extraLineStyle.paragraphSpacing, baseSpacingAfter)
+  }
+
   func testBlockLevelAttributesSimpleCase() throws {
     let view = LexicalView(editorConfig: EditorConfig(theme: themeForBlockTests(), plugins: []), featureFlags: FeatureFlags())
     let editor = view.editor
