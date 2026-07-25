@@ -34,4 +34,18 @@ open class LexicalMarkdown: Plugin {
     }
     return markdownString
   }
+
+  /// Formats exactly one Lexical block node as canonical Markdown.
+  ///
+  /// Call this while the node's editor is in a read or update scope.
+  public class func generateMarkdown(from node: Node) throws -> String {
+    guard let blockNode = node as? NodeMarkdownBlockSupport else {
+      throw LexicalError.invariantViolation(
+        "Node type '\(node.type.rawValue)' does not support block Markdown export"
+      )
+    }
+
+    let markdown = Markdown.Document([try blockNode.exportBlockMarkdown()]).format()
+    return markdown.replacingOccurrences(of: emptyTextCaretAnchor, with: "")
+  }
 }

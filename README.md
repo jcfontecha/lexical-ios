@@ -38,6 +38,12 @@ This is a **hard fork** of `facebook/lexical-ios`. It no longer tracks upstream:
 
 **NodeState (`NodeState.swift`, `Node.swift`, `SelectionHelpers.swift`).** Every node can carry typed, namespaced, copy-on-write state through `NodeStateKey`. Non-default values serialize under Lexical JS's reserved `"$"` object; unknown keys survive decode/encode, and state follows writable clones, history snapshots, and Lexical clipboard copies.
 
+**Per-instance block spacing (`Node.swift`, `Constants.swift`, `AttributesUtils.swift`, `Reconciler.swift`, `LayoutManagerDelegate.swift`).** `BlockLevelAttributes` is publicly readable and defaulted, and each node can add or clear instance spacing through NodeState without replacing theme spacing. Reconciliation resets cleared values, bottom spacing uses the correct asymmetric base, and first-root-block top spacing now contributes to actual TextKit layout height.
+
+**Node geometry and layout changes (`Editor.swift`, `LexicalView.swift`, `LayoutManager.swift`).** Consumers can query reconciled character ranges and batched `LexicalView` rectangles by node key, including empty and offscreen blocks, then subscribe to coalesced post-layout invalidations through `registerLayoutListener(_:)`.
+
+**Strict per-block Markdown export (`LexicalMarkdown.swift`).** `LexicalMarkdown.generateMarkdown(from: Node)` formats exactly one block through its existing `NodeMarkdownBlockSupport` exporter, removes the synthetic zero-width caret anchor, and throws when the supplied node does not support block Markdown export. This is the strict control-flow path for consumers whose source of truth is an ordered block list; the legacy whole-document exporter remains unchanged.
+
 **Plus:** `CodeHighlightPlugin` and `StatePersistencePlugin` additions, `LinkPlugin` adjustments, and the Swift package declaring macOS 10.15 so `LexicalHTML` can depend on SwiftSoup.
 
 Full file list: `git diff --stat upstream/main HEAD -- Lexical Plugins`.
