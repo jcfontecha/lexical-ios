@@ -78,7 +78,14 @@ public class EditorState: NSObject {
     var isEqual = true
 
     rhs.nodeMap.forEach { element in
-      isEqual = isEqual && (lhs.nodeMap[element.key] == element.value)
+      guard let lhsNode = lhs.nodeMap[element.key] else {
+        isEqual = false
+        return
+      }
+      isEqual =
+        isEqual
+        && lhsNode == element.value
+        && lhsNode.nodeStateStorage.values == element.value.nodeStateStorage.values
     }
 
     let selectionEqual: Bool

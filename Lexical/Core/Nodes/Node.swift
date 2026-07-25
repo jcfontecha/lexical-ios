@@ -18,21 +18,25 @@ open class Node: Codable {
   enum CodingKeys: String, CodingKey {
     case type
     case version
+    case nodeState = "$"
   }
 
   public var key: NodeKey
   var parent: NodeKey?
   public var version: Int
+  internal var nodeStateStorage: NodeStateStorage
 
   public init() {
     self.version = 1
     self.key = LexicalConstants.uninitializedNodeKey
+    self.nodeStateStorage = NodeStateStorage()
 
     _ = try? generateKey(node: self)
   }
 
   public init(_ key: NodeKey?) {
     self.version = 1
+    self.nodeStateStorage = NodeStateStorage()
 
     if let key, key != LexicalConstants.uninitializedNodeKey {
       self.key = key
@@ -47,6 +51,12 @@ open class Node: Codable {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     key = LexicalConstants.uninitializedNodeKey
     version = try values.decode(Int.self, forKey: .version)
+    nodeStateStorage = NodeStateStorage(
+      values: try values.decodeIfPresent(
+        [String: NodeStateJSONValue].self,
+        forKey: .nodeState
+      ) ?? [:]
+    )
 
     _ = try? generateKey(node: self)
   }
@@ -56,6 +66,10 @@ open class Node: Codable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(self.version, forKey: .version)
     try container.encode(self.type.rawValue, forKey: .type)
+    let nodeState = nodeStateStorage.valuesForEncoding()
+    if !nodeState.isEmpty {
+      try container.encode(nodeState, forKey: .nodeState)
+    }
   }
 
   /**
@@ -158,6 +172,7 @@ open class Node: Codable {
     let mutableNode = getLatest().clone()
 
     mutableNode.parent = latestNode.parent
+    mutableNode.nodeStateStorage = latestNode.nodeStateStorage
     if let latestNode = latestNode as? ElementNode, let mutableNode = mutableNode as? ElementNode {
       mutableNode.children = latestNode.children
     } else if let latestNode = latestNode as? TextNode, let mutableNode = mutableNode as? TextNode {
@@ -171,6 +186,64 @@ open class Node: Codable {
 
     editorState.nodeMap[key] = mutableNode
     return mutableNode
+  }
+
+  /// Returns the value stored for `stateKey`, or the key's default value when
+  /// the node has no serialized value for that key.
+  public func getState<Value>(
+    _ stateKey: NodeStateKey<Value>
+  ) -> Value where Value: Codable & Equatable {
+    let latest = getLatest()
+    guard let encodedValue = latest.nodeStateStorage.values[stateKey.name] else {
+      return stateKey.defaultValue
+    }
+
+    do {
+      return try encodedValue.decode(Value.self)
+    } catch {
+      assertionFailure(
+        "NodeState key \"\(stateKey.name)\" could not decode as \(String(reflecting: Value.self)): \(error)"
+      )
+      return stateKey.defaultValue
+    }
+  }
+
+  /// Replaces the value stored for `stateKey`.
+  ///
+  /// Values equal to the key's default are omitted from serialized node state.
+  /// Setting the current value again does not make the node writable or dirty.
+  @discardableResult
+  public func setState<Value>(
+    _ stateKey: NodeStateKey<Value>,
+    _ value: Value
+  ) throws -> Self where Value: Codable & Equatable {
+    let latest = getLatest()
+    let currentValue: Value
+
+    if let encodedValue = latest.nodeStateStorage.values[stateKey.name],
+      let decodedValue = try? encodedValue.decode(Value.self)
+    {
+      currentValue = decodedValue
+    } else {
+      currentValue = stateKey.defaultValue
+    }
+
+    guard currentValue != value else {
+      return latest
+    }
+
+    let writable = try latest.getWritable()
+    if !isKnownUniquelyReferenced(&writable.nodeStateStorage) {
+      writable.nodeStateStorage = writable.nodeStateStorage.copy()
+    }
+
+    if value == stateKey.defaultValue {
+      writable.nodeStateStorage.values.removeValue(forKey: stateKey.name)
+    } else {
+      writable.nodeStateStorage.values[stateKey.name] = try NodeStateJSONValue(value)
+    }
+
+    return writable
   }
 
   /// Returns the zero-based index of this node within the parent.

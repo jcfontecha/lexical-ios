@@ -12,6 +12,7 @@ public func cloneWithProperties<T: Node>(node: T) throws -> Node {
   let latest = node.getLatest()
   let clone = latest.clone()
   clone.parent = latest.parent
+  clone.nodeStateStorage = latest.nodeStateStorage
   if let latestTextNode = latest as? TextNode,
     let latestCloneNode = clone as? TextNode
   {

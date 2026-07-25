@@ -922,7 +922,9 @@ public class Editor: NSObject {
           throw LexicalError.internal("Failed to decode RootNode")
         }
 
-        try rootNode.append(serializedRootNode.getChildren())
+        let writableRoot = try rootNode.getWritable()
+        writableRoot.nodeStateStorage = serializedRootNode.nodeStateStorage
+        try writableRoot.append(serializedRootNode.getChildren())
         try rootNode.setDirection(direction: serializedRootNode.direction)
       }, mode: UpdateBehaviourModificationMode(suppressReconcilingSelection: true, suppressSanityCheck: true, markedTextOperation: nil, skipTransforms: true, allowUpdateWithoutTextStorage: false))
 

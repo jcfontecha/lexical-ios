@@ -108,4 +108,45 @@ class HistoryTests: XCTestCase {
     view.editor.dispatchCommand(type: .undo)
     XCTAssertEqual(view.textStorage.string, "", "Text storage should be empty")
   }
+
+  func testNodeStateSurvivesUndoAndRedo() throws {
+    let stateKey = NodeStateKey<String?>(
+      "dev.lexical-ios.tests.history-plugin",
+      defaultValue: nil
+    )
+
+    try editor.update {
+      guard let paragraph = getRoot()?.getFirstChild() as? ParagraphNode else {
+        XCTFail("Expected first paragraph")
+        return
+      }
+      _ = try paragraph.setState(stateKey, "before")
+    }
+
+    try editor.update {
+      guard let paragraph = getRoot()?.getFirstChild() as? ParagraphNode else {
+        XCTFail("Expected first paragraph")
+        return
+      }
+      _ = try paragraph.setState(stateKey, "after")
+    }
+
+    editor.dispatchCommand(type: .undo)
+    try editor.read {
+      guard let paragraph = getRoot()?.getFirstChild() as? ParagraphNode else {
+        XCTFail("Expected first paragraph")
+        return
+      }
+      XCTAssertEqual(paragraph.getState(stateKey), "before")
+    }
+
+    editor.dispatchCommand(type: .redo)
+    try editor.read {
+      guard let paragraph = getRoot()?.getFirstChild() as? ParagraphNode else {
+        XCTFail("Expected first paragraph")
+        return
+      }
+      XCTAssertEqual(paragraph.getState(stateKey), "after")
+    }
+  }
 }

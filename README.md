@@ -36,6 +36,8 @@ This is a **hard fork** of `facebook/lexical-ios`. It no longer tracks upstream:
 
 **Command listener ordering (`Editor.swift`, `Updates.swift`).** Listeners registered at the same `CommandPriority` fire in registration order; priority tiers still dispatch Critical -> High -> Normal -> Low -> Editor.
 
+**NodeState (`NodeState.swift`, `Node.swift`, `SelectionHelpers.swift`).** Every node can carry typed, namespaced, copy-on-write state through `NodeStateKey`. Non-default values serialize under Lexical JS's reserved `"$"` object; unknown keys survive decode/encode, and state follows writable clones, history snapshots, and Lexical clipboard copies.
+
 **Plus:** `CodeHighlightPlugin` and `StatePersistencePlugin` additions, `LinkPlugin` adjustments, and the Swift package declaring macOS 10.15 so `LexicalHTML` can depend on SwiftSoup.
 
 Full file list: `git diff --stat upstream/main HEAD -- Lexical Plugins`.
