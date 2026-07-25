@@ -10,6 +10,45 @@ import UIKit
 class LayoutManagerDelegate: NSObject, NSLayoutManagerDelegate {
   func layoutManager(
     _ layoutManager: NSLayoutManager,
+    shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<CGRect>,
+    lineFragmentUsedRect: UnsafeMutablePointer<CGRect>,
+    baselineOffset: UnsafeMutablePointer<CGFloat>,
+    in textContainer: NSTextContainer,
+    forGlyphRange glyphRange: NSRange
+  ) -> Bool {
+    guard glyphRange.location == 0,
+      let textStorage = layoutManager.textStorage,
+      textStorage.length > 0,
+      let paragraphStyle = textStorage.attribute(
+        .paragraphStyle,
+        at: 0,
+        effectiveRange: nil
+      ) as? NSParagraphStyle
+    else {
+      return false
+    }
+
+    let spacingBefore = paragraphStyle.paragraphSpacingBefore
+    guard spacingBefore != 0 else { return false }
+
+    lineFragmentRect.pointee.size.height += spacingBefore
+    lineFragmentUsedRect.pointee.size.height += spacingBefore
+    baselineOffset.pointee += spacingBefore
+    return true
+  }
+
+  func layoutManager(
+    _ layoutManager: NSLayoutManager,
+    didCompleteLayoutFor textContainer: NSTextContainer?,
+    atEnd layoutFinishedFlag: Bool
+  ) {
+    (layoutManager as? LayoutManager)?.didCompleteLayoutPass(
+      layoutFinished: layoutFinishedFlag
+    )
+  }
+
+  func layoutManager(
+    _ layoutManager: NSLayoutManager,
     shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
     properties: UnsafePointer<NSLayoutManager.GlyphProperty>,
     characterIndexes: UnsafePointer<Int>,

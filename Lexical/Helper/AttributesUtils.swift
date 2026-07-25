@@ -197,7 +197,7 @@ enum AttributeUtils {
     case extraLineFragment
   }
 
-  internal static func applyBlockLevelAttributes(_ attributes: BlockLevelAttributes, cacheItem: RangeCacheItem, textStorage: TextStorage, nodeKey: NodeKey, lastDescendentAttributes: [NSAttributedString.Key: Any]) {
+  internal static func applyBlockLevelAttributes(_ attributes: BlockLevelAttributes?, cacheItem: RangeCacheItem, textStorage: TextStorage, nodeKey: NodeKey, lastDescendentAttributes: [NSAttributedString.Key: Any]) {
 
     // for more information about the extraLineFragment, see NSLayoutManager docs
     let extraLineFragmentIsPresent = extraLineFragmentIsPresent(textStorage)
@@ -239,9 +239,20 @@ enum AttributeUtils {
     guard let firstMutableParaStyle = firstParaStyle.mutableCopy() as? NSMutableParagraphStyle else {
       return
     }
-    var spacingBefore = spacingBeforeInternal ?? firstMutableParaStyle.paragraphSpacingBefore
-    spacingBefore += attributes.marginTop
-    spacingBefore += attributes.paddingTop
+    let baseSpacingBefore = spacingBeforeInternal ?? firstMutableParaStyle.paragraphSpacingBefore
+    switch first {
+    case .extraLineFragment:
+      extraLineFragmentAttributes[.paragraphSpacingBefore_internal] = baseSpacingBefore
+    case .range(_, let enclosing):
+      textStorage.addAttribute(
+        .paragraphSpacingBefore_internal,
+        value: baseSpacingBefore,
+        range: enclosing
+      )
+    }
+    var spacingBefore = baseSpacingBefore
+    spacingBefore += attributes?.marginTop ?? 0
+    spacingBefore += attributes?.paddingTop ?? 0
     firstMutableParaStyle.paragraphSpacingBefore = spacingBefore
 
     switch first {
@@ -268,9 +279,20 @@ enum AttributeUtils {
     guard let lastMutableParaStyle = lastParaStyle.mutableCopy() as? NSMutableParagraphStyle else {
       return
     }
-    var spacingAfter = spacingInternal ?? lastMutableParaStyle.paragraphSpacing
-    spacingAfter += attributes.marginBottom
-    spacingAfter += attributes.paddingBottom
+    let baseSpacingAfter = spacingInternal ?? lastMutableParaStyle.paragraphSpacing
+    switch last {
+    case .extraLineFragment:
+      extraLineFragmentAttributes[.paragraphSpacing_internal] = baseSpacingAfter
+    case .range(_, let enclosing):
+      textStorage.addAttribute(
+        .paragraphSpacing_internal,
+        value: baseSpacingAfter,
+        range: enclosing
+      )
+    }
+    var spacingAfter = baseSpacingAfter
+    spacingAfter += attributes?.marginBottom ?? 0
+    spacingAfter += attributes?.paddingBottom ?? 0
     lastMutableParaStyle.paragraphSpacing = spacingAfter
 
     switch last {
@@ -288,7 +310,11 @@ enum AttributeUtils {
 
     // see comment on `appliedBlockLevelStyles_internal`. We're only doing this to provide data to our custom drawing routines.
     if !startTouchesExtraLineFragment, case .range(_, let enclosing) = first {
-      textStorage.addAttribute(.appliedBlockLevelStyles_internal, value: attributes, range: enclosing)
+      if let attributes {
+        textStorage.addAttribute(.appliedBlockLevelStyles_internal, value: attributes, range: enclosing)
+      } else {
+        textStorage.removeAttribute(.appliedBlockLevelStyles_internal, range: enclosing)
+      }
     }
   }
 }

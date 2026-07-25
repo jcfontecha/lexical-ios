@@ -9,6 +9,35 @@ import UIKit
 
 public typealias NodeKey = String
 
+private struct AdditionalBlockLevelAttributesState: Codable, Equatable {
+  let marginTop: CGFloat
+  let marginBottom: CGFloat
+  let paddingTop: CGFloat
+  let paddingBottom: CGFloat
+
+  init(_ attributes: BlockLevelAttributes) {
+    marginTop = attributes.marginTop
+    marginBottom = attributes.marginBottom
+    paddingTop = attributes.paddingTop
+    paddingBottom = attributes.paddingBottom
+  }
+
+  var attributes: BlockLevelAttributes {
+    BlockLevelAttributes(
+      marginTop: marginTop,
+      marginBottom: marginBottom,
+      paddingTop: paddingTop,
+      paddingBottom: paddingBottom
+    )
+  }
+}
+
+private let additionalBlockLevelAttributesState =
+  NodeStateKey<AdditionalBlockLevelAttributesState?>(
+    "lexical.block-level-attributes",
+    defaultValue: nil
+  )
+
 /// The base class for all Lexical nodes to inherit from.
 ///
 /// This class provides various methods for reading and manipulating the node tree, as well as node lifecycle support.
@@ -148,9 +177,34 @@ open class Node: Codable {
    to the relevant paragraph style for the first or last paragraph within the node. (Paragraph is here
    used to refer to a TextKit paragraph, i.e. some text separated by newlines. It's nothing to do with
    Lexical's paragraph nodes!)
-   */
+  */
   open func getBlockLevelAttributes(theme: Theme) -> BlockLevelAttributes? {
-    return theme.getBlockLevelAttributes(self.type)
+    let additionalAttributes = getAdditionalBlockLevelAttributes()
+    guard let themeAttributes = theme.getBlockLevelAttributes(self.type) else {
+      return additionalAttributes
+    }
+    return themeAttributes.adding(additionalAttributes)
+  }
+
+  /// Returns the block spacing stored on this node, excluding theme spacing.
+  ///
+  /// Read this value inside an editor read or update closure.
+  public func getAdditionalBlockLevelAttributes() -> BlockLevelAttributes? {
+    getState(additionalBlockLevelAttributesState)?.attributes
+  }
+
+  /// Replaces the block spacing stored on this node.
+  ///
+  /// Pass `nil` to clear the instance value and restore theme spacing. Call
+  /// this method inside an editor update closure.
+  @discardableResult
+  public func setAdditionalBlockLevelAttributes(
+    _ attributes: BlockLevelAttributes?
+  ) throws -> Self {
+    try setState(
+      additionalBlockLevelAttributesState,
+      attributes.map(AdditionalBlockLevelAttributesState.init)
+    )
   }
 
   /// Returns a mutable version of the node. Will throw an error if called outside of a Lexical Editor ``Editor/update(_:)`` callback.

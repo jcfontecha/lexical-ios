@@ -84,6 +84,7 @@ public class Editor: NSObject {
 
   // See description in RangeCache.swift.
   internal var rangeCache: [NodeKey: RangeCacheItem] = [:]
+  internal var appliedBlockLevelAttributeNodes: Set<NodeKey> = []
   internal var dirtyNodes: DirtyNodeMap = [:]
   internal var cloneNotNeeded: Set<NodeKey> = Set()
   internal var normalizedNodes: Set<NodeKey> = Set()
@@ -211,6 +212,27 @@ public class Editor: NSObject {
   /// active (old) EditorState.
   @objc public func getEditorState() -> EditorState {
     editorState
+  }
+
+  /// Returns the reconciled UTF-16 character range for an attached node.
+  ///
+  /// Headless editors and nodes that have not been reconciled do not have a
+  /// TextKit character range.
+  public func characterRange(forNodeKey key: NodeKey) -> NSRange? {
+    guard frontend != nil, let cacheItem = rangeCache[key] else {
+      return nil
+    }
+
+    var isAttached = false
+    do {
+      try editorState.read {
+        isAttached = getNodeByKey(key: key)?.isAttached() == true
+      }
+    } catch {
+      return nil
+    }
+
+    return isAttached ? cacheItem.range : nil
   }
 
   //  /// Returns the TextView attached to this Editor.
@@ -362,6 +384,7 @@ public class Editor: NSObject {
 
     rangeCache = [:]
     rangeCache[kRootNodeKey] = RangeCacheItem()
+    appliedBlockLevelAttributeNodes.removeAll()
 
     if let textStorage = frontend?.textStorage {
       let oldMode = textStorage.mode

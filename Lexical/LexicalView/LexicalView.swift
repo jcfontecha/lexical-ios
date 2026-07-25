@@ -49,6 +49,15 @@ public extension LexicalViewDelegate {
 /// encapsulated our UITextView subclass as a private property of LexicalView. The aim is to consider the UITextView
 /// as below the abstraction level for developers using Lexical.
 @objc public class LexicalView: UIView, Frontend {
+  /// A main-thread callback for asynchronous layout-change deliveries.
+  public typealias LayoutListener = (LexicalLayoutChange) -> Void
+
+  private var layoutListeners: [UUID: LayoutListener] = [:]
+  private var layoutGeneration: UInt64 = 0
+  private var pendingLayoutAffectedCharacterRange: NSRange?
+  private var hasPendingLayoutChange = false
+  private var layoutChangeDeliveryScheduled = false
+
   var textLayoutWidth: CGFloat {
     return max(textView.bounds.width - textView.textContainerInset.left - textView.textContainerInset.right - 2 * textView.textContainer.lineFragmentPadding, 0)
   }
@@ -87,6 +96,98 @@ public extension LexicalViewDelegate {
     fatalError("init(coder:) has not been implemented")
   }
 
+  private func geometryLayoutRange(
+    for range: NSRange,
+    textLength: Int
+  ) -> NSRange? {
+    if range.length > 0 {
+      return range
+    }
+    if range.location < textLength {
+      return NSRange(location: range.location, length: 1)
+    }
+    return nil
+  }
+
+  private func textContainerRect(
+    for characterRange: NSRange,
+    textLength: Int,
+    includeExtraLineFragment: Bool
+  ) -> CGRect? {
+    var rect = CGRect.null
+    if let layoutRange = geometryLayoutRange(
+      for: characterRange,
+      textLength: textLength
+    ) {
+      let glyphRange = layoutManager.glyphRange(
+        forCharacterRange: layoutRange,
+        actualCharacterRange: nil
+      )
+      if glyphRange.length > 0 {
+        layoutManager.enumerateLineFragments(
+          forGlyphRange: glyphRange
+        ) { lineFragmentRect, _, _, _, _ in
+          rect = rect.union(lineFragmentRect)
+        }
+      }
+    }
+
+    if includeExtraLineFragment,
+      !layoutManager.extraLineFragmentRect.isEmpty
+    {
+      rect = rect.union(layoutManager.extraLineFragmentRect)
+    }
+
+    return rect.isNull ? nil : rect
+  }
+
+  private func enqueueLayoutChange(affectedCharacterRange: NSRange?) {
+    guard !layoutListeners.isEmpty else { return }
+
+    if hasPendingLayoutChange {
+      if let currentRange = pendingLayoutAffectedCharacterRange,
+        let affectedCharacterRange
+      {
+        pendingLayoutAffectedCharacterRange = NSUnionRange(
+          currentRange,
+          affectedCharacterRange
+        )
+      } else {
+        pendingLayoutAffectedCharacterRange = nil
+      }
+    } else {
+      hasPendingLayoutChange = true
+      pendingLayoutAffectedCharacterRange = affectedCharacterRange
+    }
+
+    guard !layoutChangeDeliveryScheduled else { return }
+    layoutChangeDeliveryScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      self?.deliverPendingLayoutChange()
+    }
+  }
+
+  private func deliverPendingLayoutChange() {
+    layoutChangeDeliveryScheduled = false
+    guard hasPendingLayoutChange, !layoutListeners.isEmpty else {
+      hasPendingLayoutChange = false
+      pendingLayoutAffectedCharacterRange = nil
+      return
+    }
+
+    let affectedCharacterRange = pendingLayoutAffectedCharacterRange
+    hasPendingLayoutChange = false
+    pendingLayoutAffectedCharacterRange = nil
+    layoutGeneration += 1
+    let change = LexicalLayoutChange(
+      generation: layoutGeneration,
+      affectedCharacterRange: affectedCharacterRange
+    )
+    for listener in Array(layoutListeners.values) {
+      listener(change)
+    }
+  }
+
   // MARK: - Frontend protocol
 
   var textStorage: TextStorage {
@@ -105,6 +206,138 @@ public extension LexicalViewDelegate {
       fatalError()
     }
     return layoutManager
+  }
+
+  /// Returns current geometry for an attached node, or `nil` if the node is
+  /// detached or has not been reconciled.
+  ///
+  /// The returned rectangle is in this Lexical view's bounds coordinate space.
+  /// The query synchronously lays out only the TextKit range it needs.
+  @MainActor
+  public func geometry(forNodeKey key: NodeKey) -> NodeGeometry? {
+    geometries(forNodeKeys: CollectionOfOne(key))[key]
+  }
+
+  /// Returns current geometry for each attached, reconciled node in `keys`.
+  ///
+  /// Rectangles are in this Lexical view's bounds coordinate space. Missing
+  /// keys are omitted. The query synchronously lays out the combined requested
+  /// ranges, including ranges outside the visible viewport.
+  @MainActor
+  public func geometries(
+    forNodeKeys keys: some Sequence<NodeKey>
+  ) -> [NodeKey: NodeGeometry] {
+    let textLength = textStorage.length
+    var characterRanges: [NodeKey: NSRange] = [:]
+
+    for key in keys {
+      guard let range = editor.characterRange(forNodeKey: key),
+        range.location <= textLength
+      else {
+        continue
+      }
+
+      characterRanges[key] = NSRange(
+        location: range.location,
+        length: min(range.length, textLength - range.location)
+      )
+    }
+
+    guard !characterRanges.isEmpty,
+      let textContainer = layoutManager.textContainers.first
+    else {
+      return [:]
+    }
+
+    let rangesRequiringGlyphs = characterRanges.values.compactMap {
+      geometryLayoutRange(for: $0, textLength: textLength)
+    }
+    if let combinedRange = rangesRequiringGlyphs.reduce(nil, {
+      current, range in current.map { NSUnionRange($0, range) } ?? range
+    }) {
+      let glyphRange = layoutManager.glyphRange(
+        forCharacterRange: combinedRange,
+        actualCharacterRange: nil
+      )
+      layoutManager.ensureLayout(forGlyphRange: glyphRange)
+    } else {
+      layoutManager.ensureLayout(for: textContainer)
+    }
+
+    let editorState = editor.getEditorState()
+    let trailingEmptyTopLevelKey: NodeKey? = {
+      guard let root = editorState.nodeMap[kRootNodeKey] as? RootNode,
+        let lastKey = root.children.last,
+        let range = editor.rangeCache[lastKey]?.range,
+        range.location == textLength,
+        range.length == 0
+      else {
+        return nil
+      }
+      return lastKey
+    }()
+
+    var result: [NodeKey: NodeGeometry] = [:]
+    for (key, characterRange) in characterRanges {
+      let isTopLevel =
+        editorState.nodeMap[key]?.parent == kRootNodeKey
+      let includeExtraLineFragment =
+        NSMaxRange(characterRange) == textLength
+        && (
+          trailingEmptyTopLevelKey == nil
+            || !isTopLevel
+            || key == trailingEmptyTopLevelKey
+        )
+      guard let textContainerRect = textContainerRect(
+        for: characterRange,
+        textLength: textLength,
+        includeExtraLineFragment: includeExtraLineFragment
+      ) else {
+        continue
+      }
+
+      let textViewRect = textContainerRect.offsetBy(
+        dx: textView.textContainerInset.left,
+        dy: textView.textContainerInset.top
+      )
+      result[key] = NodeGeometry(
+        nodeKey: key,
+        characterRange: characterRange,
+        rect: textView.convert(textViewRect, to: self)
+      )
+    }
+
+    return result
+  }
+
+  /// Registers for asynchronous changes that may affect node geometry.
+  ///
+  /// Callbacks run on the main thread after TextKit reports a completed layout
+  /// pass, or after an external size/inset change. Changes pending before a
+  /// scheduled delivery are coalesced; a later invalidation may schedule
+  /// another delivery in the same run-loop turn.
+  ///
+  /// Retain and invoke the returned closure on the main thread to cancel.
+  /// Cancellation is idempotent, stops future deliveries, and the view does
+  /// not retain the removal closure.
+  @MainActor
+  public func registerLayoutListener(
+    _ listener: @escaping LayoutListener
+  ) -> Editor.RemovalHandler {
+    let token = UUID()
+    layoutListeners[token] = listener
+    if layoutListeners.count == 1 {
+      layoutManager.layoutCompletionHandler = { [weak self] affectedRange in
+        self?.enqueueLayoutChange(affectedCharacterRange: affectedRange)
+      }
+    }
+    return { [weak self] in
+      guard let self else { return }
+      self.layoutListeners.removeValue(forKey: token)
+      if self.layoutListeners.isEmpty {
+        self.layoutManager.layoutCompletionHandler = nil
+      }
+    }
   }
 
   @objc public var textContainerInsets: UIEdgeInsets {

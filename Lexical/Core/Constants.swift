@@ -191,18 +191,42 @@ public typealias CustomDrawingHandler = (
   _ firstLineFragment: CGRect
 ) -> Void
 
+/// Additional spacing around the first and last TextKit paragraphs in a block.
+///
+/// Values are measured in points and are added to the paragraph spacing
+/// supplied by the theme.
 @objc public class BlockLevelAttributes: NSObject {
-  public init(marginTop: CGFloat, marginBottom: CGFloat, paddingTop: CGFloat, paddingBottom: CGFloat) {
+  /// Creates block spacing. Omitted values default to zero.
+  public init(
+    marginTop: CGFloat = 0,
+    marginBottom: CGFloat = 0,
+    paddingTop: CGFloat = 0,
+    paddingBottom: CGFloat = 0
+  ) {
     self.marginTop = marginTop
     self.marginBottom = marginBottom
     self.paddingTop = paddingTop
     self.paddingBottom = paddingBottom
   }
 
-  let marginTop: CGFloat
-  let marginBottom: CGFloat
-  let paddingTop: CGFloat
-  let paddingBottom: CGFloat
+  /// Spacing outside the block's top edge.
+  public let marginTop: CGFloat
+  /// Spacing outside the block's bottom edge.
+  public let marginBottom: CGFloat
+  /// Spacing inside the block's top edge.
+  public let paddingTop: CGFloat
+  /// Spacing inside the block's bottom edge.
+  public let paddingBottom: CGFloat
+
+  internal func adding(_ other: BlockLevelAttributes?) -> BlockLevelAttributes {
+    guard let other else { return self }
+    return BlockLevelAttributes(
+      marginTop: marginTop + other.marginTop,
+      marginBottom: marginBottom + other.marginBottom,
+      paddingTop: paddingTop + other.paddingTop,
+      paddingBottom: paddingBottom + other.paddingBottom
+    )
+  }
 
   override public func isEqual(_ object: Any?) -> Bool {
     if let object = object as? BlockLevelAttributes {
@@ -218,5 +242,42 @@ public typealias CustomDrawingHandler = (
     hasher.combine(paddingTop)
     hasher.combine(paddingBottom)
     return hasher.finalize()
+  }
+}
+
+/// The current TextKit geometry for an attached Lexical node.
+///
+/// ``rect`` is expressed in the owning ``LexicalView``'s bounds coordinate
+/// space. It reflects the view's current scroll offset and insets at the time
+/// of the query. Geometry is a snapshot; query again after a layout change.
+public struct NodeGeometry: Equatable {
+  /// The attached node represented by this snapshot.
+  public let nodeKey: NodeKey
+  /// The node's reconciled UTF-16 range in the editor's text storage.
+  public let characterRange: NSRange
+  /// The union of the node's line fragments in the owning Lexical view.
+  public let rect: CGRect
+
+  internal init(nodeKey: NodeKey, characterRange: NSRange, rect: CGRect) {
+    self.nodeKey = nodeKey
+    self.characterRange = characterRange
+    self.rect = rect
+  }
+}
+
+/// A delivered change that may affect node geometry.
+///
+/// Changes are scoped to one ``LexicalView`` and are delivered asynchronously
+/// on the main thread. Use the geometry query APIs to read current rectangles.
+public struct LexicalLayoutChange: Equatable {
+  /// A monotonically increasing value for deliveries from one Lexical view.
+  public let generation: UInt64
+  /// The reconciled UTF-16 range affected by text layout, or `nil` when the
+  /// change may affect the whole document, such as a width or inset change.
+  public let affectedCharacterRange: NSRange?
+
+  internal init(generation: UInt64, affectedCharacterRange: NSRange?) {
+    self.generation = generation
+    self.affectedCharacterRange = affectedCharacterRange
   }
 }

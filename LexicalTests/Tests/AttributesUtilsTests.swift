@@ -280,6 +280,211 @@ class AttributesUtilsTests: XCTestCase {
     return theme
   }
 
+  func testAdditionalBlockLevelAttributesMergeReapplyAndClear() throws {
+    let theme = Theme()
+    theme.paragraph = [
+      .paragraphSpacingBefore: CGFloat(4),
+      .paragraphSpacing: CGFloat(6),
+    ]
+    theme.setBlockLevelAttributes(
+      .paragraph,
+      value: BlockLevelAttributes(
+        marginTop: 1,
+        marginBottom: 2,
+        paddingTop: 3,
+        paddingBottom: 4
+      )
+    )
+    let view = LexicalView(
+      editorConfig: EditorConfig(theme: theme, plugins: []),
+      featureFlags: FeatureFlags()
+    )
+    let additional = BlockLevelAttributes(
+      marginTop: 5,
+      marginBottom: 6,
+      paddingTop: 7,
+      paddingBottom: 8
+    )
+    var paragraphKey = ""
+
+    try view.editor.update {
+      let root = try XCTUnwrap(getRoot())
+      try root.getChildren().forEach { try $0.remove() }
+      let paragraph = ParagraphNode()
+      paragraphKey = paragraph.key
+      try paragraph.append([TextNode(text: "Instance spacing")])
+      try paragraph.setAdditionalBlockLevelAttributes(additional)
+      XCTAssertEqual(
+        paragraph.getAdditionalBlockLevelAttributes()?.paddingBottom,
+        additional.paddingBottom
+      )
+      try root.append([paragraph])
+    }
+
+    try view.editor.read {
+      let paragraph: ParagraphNode = try XCTUnwrap(
+        getNodeByKey(key: paragraphKey)
+      )
+      XCTAssertEqual(
+        paragraph.getAdditionalBlockLevelAttributes()?.paddingBottom,
+        additional.paddingBottom
+      )
+      let resolved = try XCTUnwrap(
+        paragraph.getBlockLevelAttributes(theme: theme)
+      )
+      XCTAssertEqual(resolved.marginTop, 6)
+      XCTAssertEqual(resolved.paddingTop, 10)
+    }
+
+    func paragraphStyle() throws -> NSParagraphStyle {
+      try XCTUnwrap(
+        view.textStorage.attribute(
+          .paragraphStyle,
+          at: 0,
+          effectiveRange: nil
+        ) as? NSParagraphStyle
+      )
+    }
+
+    var style = try paragraphStyle()
+    XCTAssertEqual(style.paragraphSpacingBefore, 20)
+    XCTAssertEqual(style.paragraphSpacing, 26)
+
+    try view.editor.update {
+      let paragraph: ParagraphNode = try XCTUnwrap(
+        getNodeByKey(key: paragraphKey)
+      )
+      let writable = try paragraph.setAdditionalBlockLevelAttributes(additional)
+      XCTAssertTrue(writable === paragraph)
+    }
+    style = try paragraphStyle()
+    XCTAssertEqual(style.paragraphSpacingBefore, 20)
+    XCTAssertEqual(style.paragraphSpacing, 26)
+
+    try view.editor.update {
+      let paragraph: ParagraphNode = try XCTUnwrap(
+        getNodeByKey(key: paragraphKey)
+      )
+      try paragraph.setAdditionalBlockLevelAttributes(nil)
+    }
+    style = try paragraphStyle()
+    XCTAssertEqual(style.paragraphSpacingBefore, 8)
+    XCTAssertEqual(style.paragraphSpacing, 12)
+
+    try view.editor.read {
+      let paragraph: ParagraphNode = try XCTUnwrap(
+        getNodeByKey(key: paragraphKey)
+      )
+      XCTAssertNil(paragraph.getAdditionalBlockLevelAttributes())
+    }
+  }
+
+  func testClearingOnlyInstanceBlockAttributesRestoresExactBase() throws {
+    let theme = Theme()
+    theme.paragraph = [
+      .paragraphSpacingBefore: CGFloat(5),
+      .paragraphSpacing: CGFloat(17),
+    ]
+    let view = LexicalView(
+      editorConfig: EditorConfig(theme: theme, plugins: []),
+      featureFlags: FeatureFlags()
+    )
+    var paragraphKey = ""
+    try view.editor.update {
+      let root = try XCTUnwrap(getRoot())
+      try root.getChildren().forEach { try $0.remove() }
+      let paragraph = ParagraphNode()
+      paragraphKey = paragraph.key
+      try paragraph.append([TextNode(text: "Reset exactly")])
+      try paragraph.setAdditionalBlockLevelAttributes(
+        BlockLevelAttributes(paddingTop: 30, paddingBottom: 11)
+      )
+      try root.append([paragraph])
+    }
+
+    var style = try XCTUnwrap(
+      view.textStorage.attribute(
+        .paragraphStyle,
+        at: 0,
+        effectiveRange: nil
+      ) as? NSParagraphStyle
+    )
+    XCTAssertEqual(style.paragraphSpacingBefore, 35)
+    XCTAssertEqual(style.paragraphSpacing, 28)
+
+    try view.editor.update {
+      let paragraph: ParagraphNode = try XCTUnwrap(
+        getNodeByKey(key: paragraphKey)
+      )
+      try paragraph.setAdditionalBlockLevelAttributes(nil)
+    }
+    style = try XCTUnwrap(
+      view.textStorage.attribute(
+        .paragraphStyle,
+        at: 0,
+        effectiveRange: nil
+      ) as? NSParagraphStyle
+    )
+    XCTAssertEqual(style.paragraphSpacingBefore, 5)
+    XCTAssertEqual(style.paragraphSpacing, 17)
+  }
+
+  func testDefaultThemeInstanceBlockSpacingReapplyAndClearIsExact() throws {
+    func verify(text: String) throws {
+      let textStorage = TextStorage()
+      textStorage.mode = .controllerMode
+      textStorage.replaceCharacters(
+        in: NSRange(location: 0, length: 0),
+        with: text
+      )
+      let cacheItem = RangeCacheItem(textLength: text.utf16.count)
+
+      func spacing(at location: Int) throws -> (before: CGFloat, after: CGFloat) {
+        let style = try XCTUnwrap(
+          textStorage.attribute(
+            .paragraphStyle,
+            at: location,
+            effectiveRange: nil
+          ) as? NSParagraphStyle
+        )
+        return (style.paragraphSpacingBefore, style.paragraphSpacing)
+      }
+
+      AttributeUtils.applyBlockLevelAttributes(
+        BlockLevelAttributes(paddingTop: 30, paddingBottom: 30),
+        cacheItem: cacheItem,
+        textStorage: textStorage,
+        nodeKey: "block",
+        lastDescendentAttributes: [:]
+      )
+      XCTAssertEqual(try spacing(at: 0).before, 30)
+      XCTAssertEqual(try spacing(at: textStorage.length - 1).after, 30)
+
+      AttributeUtils.applyBlockLevelAttributes(
+        BlockLevelAttributes(paddingTop: 40, paddingBottom: 40),
+        cacheItem: cacheItem,
+        textStorage: textStorage,
+        nodeKey: "block",
+        lastDescendentAttributes: [:]
+      )
+      XCTAssertEqual(try spacing(at: 0).before, 40)
+      XCTAssertEqual(try spacing(at: textStorage.length - 1).after, 40)
+
+      AttributeUtils.applyBlockLevelAttributes(
+        nil,
+        cacheItem: cacheItem,
+        textStorage: textStorage,
+        nodeKey: "block",
+        lastDescendentAttributes: [:]
+      )
+      XCTAssertEqual(try spacing(at: 0).before, 0)
+      XCTAssertEqual(try spacing(at: textStorage.length - 1).after, 0)
+    }
+
+    try verify(text: "single")
+    try verify(text: "first\nsecond")
+  }
+
   func testBlockLevelAttributesPreserveAsymmetricBaseParagraphSpacing() throws {
     let baseSpacingBefore: CGFloat = 5
     let baseSpacingAfter: CGFloat = 17

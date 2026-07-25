@@ -246,14 +246,27 @@ internal enum Reconciler {
       }
     }
     let rangeCache = reconcilerState.nextRangeCache
+    editor.appliedBlockLevelAttributeNodes.formIntersection(
+      pendingEditorState.nodeMap.keys
+    )
     for nodeKey in nodesToApplyBlockAttributes {
       guard let node = getNodeByKey(key: nodeKey),
         node.isAttached(),
-        let cacheItem = rangeCache[nodeKey],
-        let attributes = node.getBlockLevelAttributes(theme: editor.getTheme())
+        let cacheItem = rangeCache[nodeKey]
       else { continue }
 
+      let attributes = node.getBlockLevelAttributes(theme: editor.getTheme())
+      guard attributes != nil
+        || editor.appliedBlockLevelAttributeNodes.contains(nodeKey)
+      else {
+        continue
+      }
       AttributeUtils.applyBlockLevelAttributes(attributes, cacheItem: cacheItem, textStorage: textStorage, nodeKey: nodeKey, lastDescendentAttributes: lastDescendentAttributes ?? [:])
+      if attributes == nil {
+        editor.appliedBlockLevelAttributeNodes.remove(nodeKey)
+      } else {
+        editor.appliedBlockLevelAttributeNodes.insert(nodeKey)
+      }
     }
 
     editor.rangeCache = reconcilerState.nextRangeCache

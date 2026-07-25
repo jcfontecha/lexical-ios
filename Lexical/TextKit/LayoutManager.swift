@@ -8,6 +8,19 @@
 import UIKit
 
 public class LayoutManager: NSLayoutManager, @unchecked Sendable {
+  internal var layoutCompletionHandler: ((NSRange?) -> Void)? {
+    didSet {
+      if layoutCompletionHandler == nil {
+        hasPendingGeometryInvalidation = false
+        pendingAffectedCharacterRange = nil
+      }
+    }
+  }
+
+  private var hasPendingGeometryInvalidation = false
+  private var pendingAffectedCharacterRange: NSRange?
+  internal private(set) var forcedWholeContainerLayoutCount = 0
+
   internal weak var editor: Editor? {
     get {
       if let textStorage = textStorage as? TextStorage {
@@ -18,6 +31,118 @@ public class LayoutManager: NSLayoutManager, @unchecked Sendable {
   }
 
   internal var readOnlySizeCache: LexicalReadOnlySizeCache? // set to nil if not operating in read only mode
+
+  override public func ensureLayout(for textContainer: NSTextContainer) {
+    forcedWholeContainerLayoutCount += 1
+    super.ensureLayout(for: textContainer)
+  }
+
+  override public func processEditing(
+    for textStorage: NSTextStorage,
+    edited editMask: NSTextStorage.EditActions,
+    range newCharRange: NSRange,
+    changeInLength delta: Int,
+    invalidatedRange invalidatedCharRange: NSRange
+  ) {
+    if editMask.contains(.editedCharacters) {
+      recordGeometryInvalidation(
+        affectedCharacterRange: invalidatedCharRange
+      )
+    }
+    super.processEditing(
+      for: textStorage,
+      edited: editMask,
+      range: newCharRange,
+      changeInLength: delta,
+      invalidatedRange: invalidatedCharRange
+    )
+  }
+
+  override public func invalidateGlyphs(
+    forCharacterRange charRange: NSRange,
+    changeInLength delta: Int,
+    actualCharacterRange actualCharRange: NSRangePointer?
+  ) {
+    recordGeometryInvalidation(affectedCharacterRange: charRange)
+    super.invalidateGlyphs(
+      forCharacterRange: charRange,
+      changeInLength: delta,
+      actualCharacterRange: actualCharRange
+    )
+  }
+
+  override public func invalidateLayout(
+    forCharacterRange charRange: NSRange,
+    actualCharacterRange actualCharRange: NSRangePointer?
+  ) {
+    recordGeometryInvalidation(affectedCharacterRange: charRange)
+    super.invalidateLayout(
+      forCharacterRange: charRange,
+      actualCharacterRange: actualCharRange
+    )
+  }
+
+  internal func noteExternalGeometryChange() {
+    layoutCompletionHandler?(nil)
+  }
+
+  internal func didCompleteLayoutPass(layoutFinished: Bool) {
+    guard layoutFinished, hasPendingGeometryInvalidation else { return }
+    let affectedCharacterRange = pendingAffectedCharacterRange
+    hasPendingGeometryInvalidation = false
+    pendingAffectedCharacterRange = nil
+    layoutCompletionHandler?(affectedCharacterRange)
+  }
+
+  internal func recordGeometryInvalidation(affectedCharacterRange: NSRange?) {
+    guard layoutCompletionHandler != nil else { return }
+    if hasPendingGeometryInvalidation {
+      if let currentRange = pendingAffectedCharacterRange,
+        let affectedCharacterRange
+      {
+        pendingAffectedCharacterRange = NSUnionRange(
+          currentRange,
+          affectedCharacterRange
+        )
+      } else {
+        pendingAffectedCharacterRange = nil
+      }
+    } else {
+      hasPendingGeometryInvalidation = true
+      pendingAffectedCharacterRange = affectedCharacterRange
+    }
+  }
+
+  override public func setExtraLineFragmentRect(
+    _ fragmentRect: CGRect,
+    usedRect: CGRect,
+    textContainer: NSTextContainer
+  ) {
+    guard textStorage?.length == 0,
+      let lexicalTextStorage = textStorage as? TextStorage,
+      let paragraphStyle =
+        lexicalTextStorage.extraLineFragmentAttributes?[.paragraphStyle]
+        as? NSParagraphStyle
+    else {
+      super.setExtraLineFragmentRect(
+        fragmentRect,
+        usedRect: usedRect,
+        textContainer: textContainer
+      )
+      return
+    }
+
+    let spacingBefore = paragraphStyle.paragraphSpacingBefore
+    var adjustedFragmentRect = fragmentRect
+    var adjustedUsedRect = usedRect
+    adjustedFragmentRect.size.height += spacingBefore
+    adjustedUsedRect.origin.y += spacingBefore
+    super.setExtraLineFragmentRect(
+      adjustedFragmentRect,
+      usedRect: adjustedUsedRect,
+      textContainer: textContainer
+    )
+  }
 
   private var customDrawingBackground: [NSAttributedString.Key: Editor.CustomDrawingHandlerInfo] {
     get {
@@ -106,13 +231,8 @@ public class LayoutManager: NSLayoutManager, @unchecked Sendable {
 
           // If there are block styles, subtract the margin here. TODO: support nested or overlapping block element styles
           if let blockStyle = textStorage.attribute(.appliedBlockLevelStyles_internal, at: paraGroupRange.location, effectiveRange: nil) as? BlockLevelAttributes {
-            // first check to see if we should apply top margin.
-            // Logic is, the margin size is taken into account in the fragment rect height by means of paragraphSpacingBefore... however, TextKit tries to be clever and omits that spacing
-            // if it's the first paragraph.
-            if paraGroupRange.location > 0 {
-              containingRect.origin.y += blockStyle.marginTop
-              containingRect.size.height -= blockStyle.marginTop
-            }
+            containingRect.origin.y += blockStyle.marginTop
+            containingRect.size.height -= blockStyle.marginTop
             // next check for bottom margin
             if paraGroupRange.location + paraGroupRange.length < textStorage.string.lengthAsNSString() {
               containingRect.size.height -= blockStyle.marginBottom

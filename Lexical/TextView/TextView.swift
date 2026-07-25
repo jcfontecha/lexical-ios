@@ -28,6 +28,12 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
   @objc optional func textView(_ textView: TextView, cursorRectFor position: UITextPosition, defaultRect: CGRect) -> CGRect
 }
 
+private struct LayoutGeometryState: Equatable {
+  let boundsSize: CGSize
+  let textContainerInset: UIEdgeInsets
+  let textContainerSize: CGSize
+}
+
 /// Lexical's subclass of UITextView. Note that using this can be dangerous, if you make changes that Lexical does not expect.
 @objc public class TextView: UITextView {
   public let editor: Editor
@@ -51,6 +57,7 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
 
   private let useInputDelegateProxy: Bool
   private let inputDelegateProxy: InputDelegateProxy
+  private var previousLayoutGeometryState: LayoutGeometryState?
 
   fileprivate var textViewDelegate: TextViewDelegate = TextViewDelegate()
 
@@ -112,6 +119,16 @@ protocol LexicalTextViewDelegate: NSObjectProtocol {
 
     placeholderLabel.frame.origin = CGPoint(x: textContainer.lineFragmentPadding * 1.5 + textContainerInset.left, y: textContainerInset.top)
     placeholderLabel.sizeToFit()
+
+    let geometryState = LayoutGeometryState(
+      boundsSize: bounds.size,
+      textContainerInset: textContainerInset,
+      textContainerSize: textContainer.size
+    )
+    if previousLayoutGeometryState != geometryState {
+      previousLayoutGeometryState = geometryState
+      (layoutManager as? LayoutManager)?.noteExternalGeometryChange()
+    }
   }
 
   override public var inputDelegate: UITextInputDelegate? {
