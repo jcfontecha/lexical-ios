@@ -118,8 +118,9 @@ public class LayoutManager: NSLayoutManager, @unchecked Sendable {
     usedRect: CGRect,
     textContainer: NSTextContainer
   ) {
-    guard textStorage?.length == 0,
-      let lexicalTextStorage = textStorage as? TextStorage,
+    guard let lexicalTextStorage = textStorage as? TextStorage,
+      let terminalBlock = lexicalTextStorage.terminalBlockLayout,
+      terminalBlock.isEmpty,
       let paragraphStyle =
         lexicalTextStorage.extraLineFragmentAttributes?[.paragraphStyle]
         as? NSParagraphStyle
@@ -133,10 +134,14 @@ public class LayoutManager: NSLayoutManager, @unchecked Sendable {
     }
 
     let spacingBefore = paragraphStyle.paragraphSpacingBefore
+    let spacingAfter =
+      (terminalBlock.attributes?.marginBottom ?? 0)
+      + (terminalBlock.attributes?.paddingBottom ?? 0)
     var adjustedFragmentRect = fragmentRect
     var adjustedUsedRect = usedRect
-    adjustedFragmentRect.size.height += spacingBefore
+    adjustedFragmentRect.size.height += spacingBefore + spacingAfter
     adjustedUsedRect.origin.y += spacingBefore
+    adjustedUsedRect.size.height += spacingAfter
     super.setExtraLineFragmentRect(
       adjustedFragmentRect,
       usedRect: adjustedUsedRect,

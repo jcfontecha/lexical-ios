@@ -269,6 +269,20 @@ internal enum Reconciler {
       }
     }
 
+    if let terminalNode = getRoot()?.getLastChild(),
+      let terminalRange = rangeCache[terminalNode.key]?.range
+    {
+      textStorage.terminalBlockLayout = TerminalBlockLayout(
+        attributes: terminalNode.getBlockLevelAttributes(
+          theme: editor.getTheme()
+        ),
+        isEmpty: terminalRange.location == textStorage.length
+          && terminalRange.length == 0
+      )
+    } else {
+      textStorage.terminalBlockLayout = nil
+    }
+
     editor.rangeCache = reconcilerState.nextRangeCache
     textStorage.endEditing()
     if let nextSelection = reconcilerState.nextEditorState.selection as? RangeSelection {

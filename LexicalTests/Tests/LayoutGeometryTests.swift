@@ -122,6 +122,54 @@ final class LayoutGeometryTests: XCTestCase {
     XCTAssertEqual(spacedHeight - baseHeight, 30, accuracy: 0.5)
   }
 
+  func testInstanceBottomSpacingOnlyUpdateChangesTerminalParagraphGeometry() throws {
+    let view = makeView()
+    var paragraphKey = ""
+    try view.editor.update {
+      let root = try XCTUnwrap(getRoot())
+      try root.getChildren().forEach { try $0.remove() }
+      let paragraph = ParagraphNode()
+      paragraphKey = paragraph.key
+      try paragraph.append([TextNode(text: "Instance spacing")])
+      try root.append([paragraph])
+    }
+    finishLayout(view)
+    let textContainer = try XCTUnwrap(view.layoutManager.textContainers.first)
+    let baseHeight = try XCTUnwrap(
+      view.geometry(forNodeKey: paragraphKey)
+    ).rect.height
+    let baseUsedHeight = view.layoutManager.usedRect(for: textContainer).height
+
+    try view.editor.update {
+      let paragraph: ParagraphNode = try XCTUnwrap(
+        getNodeByKey(key: paragraphKey)
+      )
+      try paragraph.setAdditionalBlockLevelAttributes(
+        BlockLevelAttributes(paddingBottom: 40)
+      )
+    }
+    finishLayout(view)
+
+    let paragraphStyle = try XCTUnwrap(
+      view.textStorage.attribute(
+        .paragraphStyle,
+        at: 0,
+        effectiveRange: nil
+      ) as? NSParagraphStyle
+    )
+    XCTAssertEqual(paragraphStyle.paragraphSpacing, 40)
+    XCTAssertEqual(
+      try XCTUnwrap(view.geometry(forNodeKey: paragraphKey)).rect.height,
+      baseHeight + 40,
+      accuracy: 0.5
+    )
+    XCTAssertEqual(
+      view.layoutManager.usedRect(for: textContainer).height,
+      baseUsedHeight + 40,
+      accuracy: 0.5
+    )
+  }
+
   func testBatchedGeometryLaysOutOffscreenBlocksAndEmptyEdges() throws {
     let view = makeView(height: 80)
     var keys: [NodeKey] = []

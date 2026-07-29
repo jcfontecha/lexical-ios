@@ -7,6 +7,11 @@
 
 import UIKit
 
+internal struct TerminalBlockLayout {
+  let attributes: BlockLevelAttributes?
+  let isEmpty: Bool
+}
+
 public class TextStorage: NSTextStorage {
 
   internal typealias CharacterLocation = Int
@@ -15,6 +20,7 @@ public class TextStorage: NSTextStorage {
   private var backingAttributedString: NSMutableAttributedString
   var mode: TextStorageEditingMode
   weak var editor: Editor?
+  internal var terminalBlockLayout: TerminalBlockLayout?
 
   override public init() {
     backingAttributedString = NSMutableAttributedString()

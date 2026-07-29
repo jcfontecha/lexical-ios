@@ -16,25 +16,44 @@ class LayoutManagerDelegate: NSObject, NSLayoutManagerDelegate {
     in textContainer: NSTextContainer,
     forGlyphRange glyphRange: NSRange
   ) -> Bool {
-    guard glyphRange.location == 0,
-      let textStorage = layoutManager.textStorage,
-      textStorage.length > 0,
+    guard let textStorage = layoutManager.textStorage,
+      textStorage.length > 0
+    else { return false }
+
+    var changed = false
+
+    if glyphRange.location == 0,
       let paragraphStyle = textStorage.attribute(
         .paragraphStyle,
         at: 0,
         effectiveRange: nil
       ) as? NSParagraphStyle
-    else {
-      return false
+    {
+      let spacingBefore = paragraphStyle.paragraphSpacingBefore
+      if spacingBefore != 0 {
+        lineFragmentRect.pointee.size.height += spacingBefore
+        lineFragmentUsedRect.pointee.size.height += spacingBefore
+        baselineOffset.pointee += spacingBefore
+        changed = true
+      }
     }
 
-    let spacingBefore = paragraphStyle.paragraphSpacingBefore
-    guard spacingBefore != 0 else { return false }
+    if glyphRange.upperBound == layoutManager.numberOfGlyphs,
+      let terminalBlock = (textStorage as? TextStorage)?.terminalBlockLayout,
+      !terminalBlock.isEmpty,
+      let blockLevelAttributes = terminalBlock.attributes
+    {
+      let spacingAfter =
+        blockLevelAttributes.marginBottom
+        + blockLevelAttributes.paddingBottom
+      if spacingAfter != 0 {
+        lineFragmentRect.pointee.size.height += spacingAfter
+        lineFragmentUsedRect.pointee.size.height += spacingAfter
+        changed = true
+      }
+    }
 
-    lineFragmentRect.pointee.size.height += spacingBefore
-    lineFragmentUsedRect.pointee.size.height += spacingBefore
-    baselineOffset.pointee += spacingBefore
-    return true
+    return changed
   }
 
   func layoutManager(
