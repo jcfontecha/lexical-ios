@@ -8,6 +8,23 @@
 import UIKit
 
 class LayoutManagerDelegate: NSObject, NSLayoutManagerDelegate {
+  /// The space this delegate adds to the top of the document's first line
+  /// fragment — inside its used rect — so the first block's spacing-before
+  /// occupies real layout space. That fragment's glyphs start this far below
+  /// its used rect's top. Zero for layout managers this delegate doesn't lay out.
+  static func firstLineFragmentSpacingBefore(in layoutManager: NSLayoutManager) -> CGFloat {
+    guard layoutManager.delegate is LayoutManagerDelegate,
+      let textStorage = layoutManager.textStorage,
+      textStorage.length > 0,
+      let paragraphStyle = textStorage.attribute(
+        .paragraphStyle,
+        at: 0,
+        effectiveRange: nil
+      ) as? NSParagraphStyle
+    else { return 0 }
+    return paragraphStyle.paragraphSpacingBefore
+  }
+
   func layoutManager(
     _ layoutManager: NSLayoutManager,
     shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<CGRect>,
@@ -22,14 +39,8 @@ class LayoutManagerDelegate: NSObject, NSLayoutManagerDelegate {
 
     var changed = false
 
-    if glyphRange.location == 0,
-      let paragraphStyle = textStorage.attribute(
-        .paragraphStyle,
-        at: 0,
-        effectiveRange: nil
-      ) as? NSParagraphStyle
-    {
-      let spacingBefore = paragraphStyle.paragraphSpacingBefore
+    if glyphRange.location == 0 {
+      let spacingBefore = Self.firstLineFragmentSpacingBefore(in: layoutManager)
       if spacingBefore != 0 {
         lineFragmentRect.pointee.size.height += spacingBefore
         lineFragmentUsedRect.pointee.size.height += spacingBefore

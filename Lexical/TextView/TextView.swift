@@ -576,7 +576,8 @@ private struct LayoutGeometryState: Equatable {
       return verticallyCenter(rect, in: defaultRect, minimumY: textContainerInset.top)
     }
 
-    let lineFragmentRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+    var lineFragmentGlyphRange = NSRange(location: 0, length: 0)
+    let lineFragmentRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineFragmentGlyphRange)
     let usedLineFragmentRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
     let fallbackLineMidY = caretLineMidY(
       atCharacterOffset: cursorLocation,
@@ -606,12 +607,17 @@ private struct LayoutGeometryState: Equatable {
     // cap-height centre of the line. Aligning to the top of the used rect
     // plus half the font's lineHeight keeps the caret visually centred on
     // the rendered characters, including in non-last paragraphs and softly
-    // wrapped lines where the used rect carries trailing lineSpacing.
+    // wrapped lines where the used rect carries trailing lineSpacing. The
+    // document's first line fragment also carries its paragraph's
+    // spacing-before at the top of the used rect, above the glyphs.
     let lineMidY: CGFloat
     if usedLineFragmentRect.isEmpty {
       lineMidY = fallbackLineMidY
     } else {
-      lineMidY = usedLineFragmentRect.minY + rect.height / 2
+      let glyphRunTop = usedLineFragmentRect.minY
+        + (lineFragmentGlyphRange.location == 0
+          ? LayoutManagerDelegate.firstLineFragmentSpacingBefore(in: layoutManager) : 0)
+      lineMidY = glyphRunTop + rect.height / 2
     }
     rect.origin.y = textContainerInset.top + lineMidY - rect.height / 2
     rect.origin.y = max(rect.origin.y, textContainerInset.top + max(lineFragmentRect.minY, 0))

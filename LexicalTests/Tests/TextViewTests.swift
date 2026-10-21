@@ -917,6 +917,32 @@ class TextViewTests: XCTestCase {
       accuracy: 0.5)
   }
 
+  func testMeasuredCaretOnFirstLineCentresOnGlyphsBelowSpacingBefore() throws {
+    let font = UIFont.boldSystemFont(ofSize: 30)
+    let style = NSMutableParagraphStyle()
+    style.paragraphSpacingBefore = 12
+    let layout = measuredCaretTestLayout(for: NSAttributedString(
+      string: "Title",
+      attributes: [.font: font, .paragraphStyle: style]))
+    let delegate = LayoutManagerDelegate()
+    layout.layoutManager.delegate = delegate
+    layout.layoutManager.invalidateLayout(
+      forCharacterRange: NSRange(location: 0, length: layout.textStorage.length),
+      actualCharacterRange: nil)
+    layout.layoutManager.ensureLayout(for: layout.textContainer)
+
+    let glyphIndex = layout.layoutManager.glyphIndexForCharacter(at: 2)
+    let fragment = layout.layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+    let glyphTop = fragment.minY + layout.layoutManager.location(forGlyphAt: glyphIndex).y - font.ascender
+    XCTAssertEqual(glyphTop, 12, accuracy: 0.5, "the delegate lays the first line's glyphs out below its spacing-before")
+
+    let measuredRect = measuredCaretRect(
+      layout: layout,
+      offset: 2,
+      defaultRect: CGRect(x: 0, y: 0, width: 2, height: font.lineHeight))
+    XCTAssertEqual(measuredRect.midY, glyphTop + font.lineHeight / 2, accuracy: 0.5)
+  }
+
   private func measuredCaretRect(
     layout: (textStorage: NSTextStorage, layoutManager: NSLayoutManager, textContainer: NSTextContainer),
     offset: Int,
