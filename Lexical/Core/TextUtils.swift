@@ -12,6 +12,16 @@ internal func isRootTextContentEmpty(isEditorComposing: Bool, trim: Bool = true)
     return false
   }
 
+  // A block followed by a sibling contributes a "\n" postamble to the root's
+  // text, so an untrimmed multi-block root is never empty — skip building it.
+  if !trim,
+    let firstChild = getRoot()?.getFirstChild() as? ElementNode,
+    !firstChild.isInline(),
+    firstChild.getNextSibling() != nil
+  {
+    return false
+  }
+
   var text = rootTextContentRemovingEmptyInvisibles()
   if trim {
     text = text.trimmingCharacters(in: .whitespacesAndNewlines)

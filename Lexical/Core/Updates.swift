@@ -50,6 +50,11 @@ func triggerErrorListeners(activeEditor: Editor, activeEditorState: EditorState,
 }
 
 public func triggerTextContentListeners(activeEditor: Editor, activeEditorState: EditorState, previousEditorState: EditorState) throws {
+  // Both reads walk the whole document; skip them when nobody is listening.
+  if activeEditor.listeners.textContent.isEmpty {
+    return
+  }
+
   let activeTextContent = try getEditorStateTextContent(editorState: activeEditorState)
   let previousTextContent = try getEditorStateTextContent(editorState: previousEditorState)
 
