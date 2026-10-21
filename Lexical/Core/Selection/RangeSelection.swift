@@ -160,13 +160,12 @@ public class RangeSelection: BaseSelection {
   }
 
   public func insertRawText(text: String) throws {
-    let parts = text.split { $0 == "\n" || $0 == "\r\n" }.map(String.init)
-    if parts.count == 0 {
-      // Swift's split drops empty subsequences (JS yields [""] here), so an
-      // empty/newline-only insert must take the plain-deletion path. Routing it
-      // through insertNodes([]) corrupts the parent's children array.
-      try insertText(text)
-    } else if parts.count == 1 {
+    // Keep empty pieces, as JS's split does: every newline becomes exactly one
+    // line break, including leading, trailing, and consecutive ones. An empty
+    // insert yields one empty piece and takes the plain-deletion path; routing
+    // it through insertNodes([]) corrupts the parent's children array.
+    let parts = text.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r\n" }.map(String.init)
+    if parts.count == 1 {
       try insertText(text)
     } else {
       var nodes = [Node]()
